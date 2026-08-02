@@ -70,28 +70,10 @@ again" at the same level.
   planning player beats greedy (so late losses reward planning, aren't just
   unfair).
 
-- **Level curve.** Fully packed at every level. Grid size is fixed-length
-  tiers of 25 levels each, growing forever: 3×3 (L1–25) → 4×4 (L26–50) → 5×5
-  (L51–75) → 6×6 (L76–100) → ... See `gridSizeForLevel()` / `levelParams()` in
-  the engine (`LEVELS_PER_GRID_TIER`).
-  - **Supersedes an earlier decision.** This doc used to say "capped at 5×5 —
-    6×6 makes even careful play lose unfairly," based on solver playtesting at
-    the time. Leon revisited this (2026-07-30) and chose infinite grid growth
-    over a fixed cap, since levels need to be endless. He then revisited the
-    *pacing* the same day: 5×5 used to show up at level 10, felt "really hard"
-    that early, so each size now gets a full 25 levels before the next size
-    kicks in — 5×5 doesn't appear until level 51. The old fairness concern
-    about 6×6+ hasn't been re-verified with fresh playtesting/solver runs;
-    worth sanity-checking win-rate curves at 6×6/7×7+ before calling this done.
-  - Cap range no longer slides continuously with level — it steps in small
-    jumps every `CAP_STEP_LEVELS` (5) levels instead, a plateau-then-bump feel
-    rather than a smooth ramp. `capMax` climbs 9→42 (saturates ~level 36 now,
-    pushed out from the old ~29); `capMin` tightens 7→4 (floors ~level 24,
-    unchanged — it's on its own every-8-levels step, not tied to the new
-    5-level cap-max stepping). Both saturate partway through the 3×3/4×4
-    tiers, so grid size alone carries the difficulty ramp for the remainder of
-    the curve. Not re-verified against these new, much longer tiers — same
-    "hasn't been freshly playtested" caveat as the grid-growth decision above.
+- **Level curve.** Fully packed at every level. Grid grows 3×3 (L1–3) → 4×4
+  (L4–9) → 5×5 (L10+). **Capped at 5×5** — 6×6 makes even careful play lose
+  unfairly. Only the cap range widens with level; danger stays constant, only the
+  reading load scales. See `levelParams()` in the engine.
 
 - **At most one full (at-cap) cell to start, and it must be SAFE to tap.** A full
   cell is the obvious "tap first" focal point; more than one, or one that bursts a
