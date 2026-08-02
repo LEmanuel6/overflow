@@ -1,0 +1,18 @@
+{"_e":"root:init","_t":1785193892758,"format":"v0-jsonl","version":"57.0.10"}
+{"_e":"env:mode","_t":1785193892759,"nodeEnv":"development","babelEnv":"development","mode":"development"}
+{"_e":"env:load","_t":1785193892763,"mode":"development","files":[],"env":{}}
+{"_e":"root:init","_t":1785193951567,"format":"v0-jsonl","version":"57.0.10"}
+{"_e":"env:mode","_t":1785193951568,"nodeEnv":"development","babelEnv":"development","mode":"development"}
+{"_e":"env:load","_t":1785193951571,"mode":"development","files":[],"env":{}}
+{"_e":"devserver:start","_t":1785193952036,"mode":"development","web":true,"baseUrl":"","asyncRoutes":false,"routerRoot":"../..\\..\\app","serverComponents":false,"serverActions":false,"serverRendering":false,"apiRoutes":false,"exporting":false}
+{"_e":"metro:config","_t":1785193952623,"serverRoot":"../..\\..","projectRoot":"../..\\..","exporting":false,"flags":{"autolinkingModuleResolution":false,"serverActions":false,"serverComponents":false,"reactCompiler":false,"optimizeGraph":false,"treeshaking":false,"logbox":false}}
+{"_e":"expo:dev-tools-plugin:load","_t":1785193953176,"plugins":[]}
+{"_e":"metro:instantiate","_t":1785193958137,"atlas":false,"workers":6,"host":"::","port":8081}
+{"_e":"root:init","_t":1785193983818,"format":"v0-jsonl","version":"57.0.10"}
+{"_e":"env:mode","_t":1785193983819,"nodeEnv":"development","babelEnv":"development","mode":"development"}
+{"_e":"env:load","_t":1785193983823,"mode":"development","files":[],"env":{}}
+{"_e":"devserver:start","_t":1785193984119,"mode":"development","web":true,"baseUrl":"","asyncRoutes":false,"routerRoot":"../..\\..\\app","serverComponents":false,"serverActions":false,"serverRendering":false,"apiRoutes":false,"exporting":false}
+{"_e":"metro:config","_t":1785193984597,"serverRoot":"../..\\..","projectRoot":"../..\\..","exporting":false,"flags":{"autolinkingModuleResolution":false,"serverActions":false,"serverComponents":false,"reactCompiler":false,"optimizeGraph":false,"treeshaking":false,"logbox":false}}
+{"_e":"expo:dev-tools-plugin:load","_t":1785193984876,"plugins":[]}
+{"_e":"metro:instantiate","_t":1785193989506,"atlas":false,"workers":6,"host":"::","port":8081}
+{"_e":"metro:client_log","_t":1785194026162,"level":"error","data":["Project is incompatible with this version of Expo Go\n\nThis project requires a newer version of Expo Go.\n\nHow to fix this error:\nDownload the latest version of Expo Go from the Play Store."]}

@@ -1,0 +1,30 @@
+{
+  "expo": {
+    "name": "Overflow",
+    "slug": "overflow",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#F4F1E8"
+    },
+    "assetBundlePatterns": ["**/*"],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.yourname.overflow"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#F4F1E8"
+      },
+      "package": "com.yourname.overflow"
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    }
+  }
+}
