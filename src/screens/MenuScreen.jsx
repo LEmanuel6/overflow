@@ -6,13 +6,18 @@ import { useTheme } from '../theme';
 import Tray from '../components/Tray';
 import ConfirmDialog from '../components/ConfirmDialog';
 import { ACHIEVEMENTS, ACHIEVEMENTS_BY_ID } from '../data/achievements';
+import { localDateStr, totalAttemptsForDay, completedCountForDay } from '../state/useDailyStats';
+import { DAILY_DIFFICULTY_ORDER } from '../engine';
 
 const RECENT_LIMIT = 3;
 
-export default function MenuScreen({ level, stats, onPlay, onReset, onHome, onStats, onAchievements, onSettings }) {
+export default function MenuScreen({ level, stats, onPlay, onReset, onHome, onStats, onAchievements, onSettings, dailyStats, onDaily }) {
   const theme = useTheme();
   const styles = useMemo(() => makeStyles(theme), [theme]);
-  const unlockedCount = ACHIEVEMENTS.filter((a) => a.check(stats)).length;
+  // Daily-sourced achievements (source: 'daily') live in the separate
+  // dailyStats blob, not the ladder stats blob — see achievements.js.
+  const blobFor = (a) => (a.source === 'daily' ? dailyStats : stats);
+  const unlockedCount = ACHIEVEMENTS.filter((a) => { const b = blobFor(a); return b && a.check(b); }).length;
   const [confirmingReset, setConfirmingReset] = useState(false);
 
   const handleReset = () => {
@@ -20,11 +25,19 @@ export default function MenuScreen({ level, stats, onPlay, onReset, onHome, onSt
     onReset();
   };
 
-  const recent = Object.entries(stats.unlockedAt)
+  const mergedUnlockedAt = { ...stats.unlockedAt, ...(dailyStats?.unlockedAt || {}) };
+  const recent = Object.entries(mergedUnlockedAt)
     .sort((a, b) => b[1] - a[1])
     .slice(0, RECENT_LIMIT)
     .map(([id]) => ACHIEVEMENTS_BY_ID[id])
     .filter(Boolean);
+
+  const today = localDateStr();
+  const totalAttemptsToday = dailyStats ? totalAttemptsForDay(dailyStats, today) : 0;
+  const completedToday = dailyStats ? completedCountForDay(dailyStats, today) : 0;
+  const dailySubtitle = totalAttemptsToday > 0
+    ? `${completedToday}/${DAILY_DIFFICULTY_ORDER.length} completed · ${totalAttemptsToday} attempt${totalAttemptsToday === 1 ? '' : 's'} today`
+    : 'Not played yet today';
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -49,6 +62,17 @@ export default function MenuScreen({ level, stats, onPlay, onReset, onHome, onSt
             ))}
           </View>
         )}
+      </Pressable>
+
+      <Pressable style={styles.dailyCard} onPress={onDaily}>
+        <View style={styles.dailyBadge}>
+          <Ionicons name="today-outline" size={22} color={theme.color.inkSoft} />
+        </View>
+        <View style={styles.dailyText}>
+          <Text style={styles.dailyTitle}>Daily Challenge</Text>
+          <Text style={styles.dailySubtitle}>{dailySubtitle}</Text>
+        </View>
+        <Ionicons name="chevron-forward" size={18} color={theme.color.inkSoft} />
       </Pressable>
 
       <View style={styles.content}>
@@ -103,6 +127,19 @@ function makeStyles(theme) {
     badgeTitle: {
       fontFamily: theme.font.regular, fontSize: 14, color: theme.color.inkSoft, marginTop: 6, textAlign: 'center',
     },
+    dailyCard: {
+      flexDirection: 'row', alignItems: 'center', gap: 12,
+      marginHorizontal: 20, marginTop: 16, padding: 12,
+      backgroundColor: theme.color.vessel, borderWidth: 1, borderColor: theme.color.vesselEdge,
+      borderRadius: theme.radius,
+    },
+    dailyBadge: {
+      width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center',
+      backgroundColor: theme.color.paper, borderWidth: 1, borderColor: theme.color.vesselEdge,
+    },
+    dailyText: { flex: 1 },
+    dailyTitle: { fontFamily: theme.font.bold, fontSize: 16, color: theme.color.ink },
+    dailySubtitle: { fontFamily: theme.font.regular, fontSize: 13, color: theme.color.inkSoft, marginTop: 2 },
     content: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 16 },
     title: {
       fontFamily: theme.font.bold, fontSize: 40,

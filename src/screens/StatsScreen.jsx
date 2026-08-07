@@ -5,22 +5,21 @@ import { useTheme } from '../theme';
 import ScreenHeader from '../components/ScreenHeader';
 import Tray from '../components/Tray';
 import { formatNumber, formatDuration, formatPercent } from '../utils/format';
+import { DAILY_DIFFICULTY_ORDER, DAILY_DIFFICULTIES } from '../engine';
 
-export default function StatsScreen({ stats, onBack, onHome, onStats, onAchievements, onSettings }) {
+export default function StatsScreen({ stats, dailyStats, onBack, onHome, onStats, onAchievements, onSettings }) {
   const theme = useTheme();
   const styles = useMemo(() => makeStyles(theme), [theme]);
 
-  const tierRows = Object.keys(stats.clearedByTier)
-    .map(Number)
-    .sort((a, b) => a - b)
-    .map((n) => ({ k: `${n}×${n} cleared`, v: formatNumber(stats.clearedByTier[n]) }));
+  const dailyCompletedTotal = dailyStats
+    ? DAILY_DIFFICULTY_ORDER.reduce((sum, id) => sum + dailyStats.difficulties[id].daysWon, 0)
+    : 0;
 
   return (
     <SafeAreaView style={styles.safe}>
       <ScreenHeader theme={theme} title="STATS" onBack={onBack} />
       <ScrollView style={styles.scroll} contentContainerStyle={styles.container}>
         <Section styles={styles} title="Progress" rows={[
-          { k: 'Best level', v: formatNumber(stats.best) },
           { k: 'Boards cleared', v: formatNumber(stats.boardsCleared) },
           { k: 'Boards lost', v: formatNumber(stats.boardsLost) },
           { k: 'Win rate', v: formatPercent(stats.boardsCleared, stats.gamesPlayed) },
@@ -28,18 +27,11 @@ export default function StatsScreen({ stats, onBack, onHome, onStats, onAchievem
           { k: 'Best streak', v: formatNumber(stats.bestStreak) },
         ]} />
 
-        <Section styles={styles} title="Grid sizes" rows={[
-          { k: 'Highest grid reached', v: `${stats.highestGridSize}×${stats.highestGridSize}` },
-          ...tierRows,
-        ]} />
-
         <Section styles={styles} title="Skill" rows={[
           { k: 'Flawless clears', v: formatNumber(stats.flawlessClears) },
           { k: 'Best flawless streak', v: formatNumber(stats.bestFlawlessStreak) },
-          { k: 'Longest chain', v: formatNumber(stats.longestChain) },
           { k: 'Fewest taps to clear', v: stats.fewestTapsToClear == null ? '—' : formatNumber(stats.fewestTapsToClear) },
           { k: 'Most lives kept on a clear', v: formatNumber(stats.mostLivesRemainingOnClear) },
-          { k: 'Narrowest win (lives left)', v: stats.narrowestWinLives == null ? '—' : formatNumber(stats.narrowestWinLives) },
         ]} />
 
         <Section styles={styles} title="Volume" rows={[
@@ -59,9 +51,19 @@ export default function StatsScreen({ stats, onBack, onHome, onStats, onAchievem
         ]} />
 
         <Section styles={styles} title="Flavor" rows={[
-          { k: 'Comeback wins', v: formatNumber(stats.comebackWins) },
-          { k: 'Green-thumb clears', v: formatNumber(stats.greenThumbClears) },
+          { k: 'Most boards cleared in a day', v: formatNumber(stats.bestDayClears) },
+          { k: 'Longest session', v: formatDuration(stats.bestSessionMs) },
         ]} />
+
+        {dailyStats && (
+          <Section styles={styles} title="Daily Challenges" rows={[
+            { k: 'Daily challenges completed', v: formatNumber(dailyCompletedTotal) },
+            ...DAILY_DIFFICULTY_ORDER.map((id) => ({
+              k: `${DAILY_DIFFICULTIES[id].label} challenges completed`,
+              v: formatNumber(dailyStats.difficulties[id].daysWon),
+            })),
+          ]} />
+        )}
       </ScrollView>
       <Tray theme={theme} active="stats" onHome={onHome} onStats={onStats} onAchievements={onAchievements} onSettings={onSettings} />
     </SafeAreaView>

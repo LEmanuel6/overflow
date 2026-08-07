@@ -250,16 +250,18 @@ function isWinnable(cells, caps, n, ratio, budgetLimit = 20000) {
 
 /* ------------------------------------------------------- board generation */
 
-// Draw a per-cell cap array uniformly across [capMin, capMax].
-function rollCaps(n, capMin, capMax) {
+// Draw a per-cell cap array uniformly across [capMin, capMax]. `rng` defaults
+// to Math.random; a seeded generator (e.g. for the daily challenge) can pass
+// its own deterministic source instead.
+function rollCaps(n, capMin, capMax, rng = Math.random) {
   const size = n * n, caps = new Array(size);
-  for (let i = 0; i < size; i++) caps[i] = capMin + Math.floor(Math.random() * (capMax - capMin + 1));
+  for (let i = 0; i < size; i++) caps[i] = capMin + Math.floor(rng() * (capMax - capMin + 1));
   return caps;
 }
 
 // Place a fully-packed board: every cell gets a non-green value, at most one at
 // its cap, and any full cell must be safe to tap.
-function placeFull(caps, n, ratio) {
+function placeFull(caps, n, ratio, rng = Math.random) {
   const size = n * n, cells = new Array(size).fill(0);
   let full = 0;
   for (let i = 0; i < size; i++) {
@@ -276,8 +278,8 @@ function placeFull(caps, n, ratio) {
       cells[i] = cap; full++;
       continue;
     }
-    if (full < 1 && Math.random() < 0.1) { cells[i] = cap; full++; }
-    else cells[i] = minv + Math.floor(Math.random() * (cap - minv));   // strictly below cap
+    if (full < 1 && rng() < 0.1) { cells[i] = cap; full++; }
+    else cells[i] = minv + Math.floor(rng() * (cap - minv));   // strictly below cap
   }
   return cells;
 }
@@ -292,11 +294,13 @@ function fullCellsSafe(cells, caps, n, ratio) {
 }
 
 // Generate one winnable, fully-packed board for the given params. Returns
-// { cells, caps } or null if it couldn't within `attempts`.
-function generateBoard({ n, ratio, capMin, capMax }, attempts = 120) {
+// { cells, caps } or null if it couldn't within `attempts`. `rng` defaults to
+// Math.random; passing a seeded generator makes the whole board deterministic
+// (see newDailyGame below).
+function generateBoard({ n, ratio, capMin, capMax }, attempts = 120, rng = Math.random) {
   for (let a = 0; a < attempts; a++) {
-    const caps = rollCaps(n, capMin, capMax);
-    const cells = placeFull(caps, n, ratio);
+    const caps = rollCaps(n, capMin, capMax, rng);
+    const cells = placeFull(caps, n, ratio, rng);
     if (!cells.some(v => v > 0)) continue;
     // at most one full (at-cap) cell, and that cell must be safe to tap
     let fullCount = 0;
@@ -368,10 +372,77 @@ function retry(state) {
 }
 
 // Last-resort board if generation fails (should be rare): a small safe board.
-function fallbackBoard(params) {
-  const caps = rollCaps(params.n, params.capMin, params.capMax);
-  const cells = placeFull(caps, params.n, params.ratio);
+function fallbackBoard(params, rng = Math.random) {
+  const caps = rollCaps(params.n, params.capMin, params.capMax, rng);
+  const cells = placeFull(caps, params.n, params.ratio, rng);
   return { cells, caps };
+}
+
+/* --------------------------------------------------- daily challenge -----
+ * A single board, generated identically for every player on a given date —
+ * the deterministic RNG is what makes "same puzzle for everyone" possible
+ * with zero backend. Fully separate from the level curve above: fixed
+ * difficulty, no persistence-by-level, no next-level advancement.
+ */
+
+// mulberry32 — tiny deterministic PRNG; identical output sequence for a given
+// seed on every JS engine (V8/Hermes/JSC), which "same board for everyone"
+// depends on.
+function mulberry32(seed) {
+  let a = seed >>> 0;
+  return function () {
+    a |= 0; a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+// FNV-1a string hash -> 32-bit seed.
+function seedFromString(str) {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 0x01000193); }
+  return h >>> 0;
+}
+
+// Four fixed difficulty tiers, each its own grid size + cap range + time
+// limit — separate boards, separate leaderboards-of-one, all seeded off the
+// same date. Cap ranges are starting points (not re-verified by the solver's
+// win-rate stats the way the level curve was) — needs playtesting:
+//  - beginner: tiny grid, tight 20s limit, gentle caps so the pressure is the
+//    clock, not the reading load.
+//  - intermediate: matches the original single daily board's params.
+//  - expert/master: caps climb toward (but stay under) levelParams()'s
+//    ceiling of 42, so numbers stay readable under a multi-minute clock.
+const DAILY_DIFFICULTIES = {
+  beginner:     { label: 'Beginner',     n: 3, ratio: 0.88, capMin: 6, capMax: 10, timeLimitMs: 20000 },
+  intermediate: { label: 'Intermediate', n: 4, ratio: 0.88, capMin: 5, capMax: 20, timeLimitMs: 60000 },
+  expert:       { label: 'Expert',       n: 5, ratio: 0.88, capMin: 5, capMax: 26, timeLimitMs: 180000 },
+  master:       { label: 'Master',       n: 6, ratio: 0.88, capMin: 4, capMax: 34, timeLimitMs: 300000 },
+};
+const DAILY_DIFFICULTY_ORDER = ['beginner', 'intermediate', 'expert', 'master'];
+
+// Builds the identical board for every caller with the same (dateStr,
+// difficulty) pair. The engine has no notion of "today" — callers decide the
+// date string (see DailyChallengeScreen). Difficulty is folded into the seed
+// (not just its params) so two tiers can never coincidentally share a board
+// even if they shared a grid size. `level: 'daily'` is a non-numeric marker
+// so it can never be mistaken for ladder state by code that assumes level is
+// an int.
+function newDailyGame(dateStr, difficulty) {
+  const params = DAILY_DIFFICULTIES[difficulty];
+  const rng = mulberry32(seedFromString(`${dateStr}:${difficulty}`));
+  const board = generateBoard(params, 120, rng) || fallbackBoard(params, rng);
+  return {
+    n: params.n,
+    ratio: params.ratio,
+    cells: board.cells,
+    caps: board.caps,
+    level: 'daily',
+    lives: MAX_LIVES,
+    taps: 0,
+    status: 'play',
+  };
 }
 
 /* --------------------------------------------------------------- exports */
@@ -380,6 +451,8 @@ const OverflowEngine = {
   MAX_LIVES,
   // lifecycle
   newGame, nextLevel, retry, levelParams, gridSizeForLevel,
+  // daily challenge
+  newDailyGame, DAILY_DIFFICULTIES, DAILY_DIFFICULTY_ORDER,
   // moves
   tap,
   // inspection (for rendering hints)
@@ -395,6 +468,7 @@ export default OverflowEngine;
 export {
   MAX_LIVES,
   newGame, nextLevel, retry, levelParams, gridSizeForLevel,
+  newDailyGame, DAILY_DIFFICULTIES, DAILY_DIFFICULTY_ORDER,
   tap,
   legalTaps, safeTaps, tapBursts, isGreen, shareEach, neighbours,
   generateBoard, isWinnable, resolveCascade, distribute, distributeAndGrow, rollCaps, placeFull,

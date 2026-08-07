@@ -23,7 +23,8 @@
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#F4F1E8"
       },
-      "package": "com.yourname.overflow"
+      "package": "com.yourname.overflow",
+      "backgroundColor": "#1B1A17"
     },
     "web": {
       "favicon": "./assets/favicon.png"

@@ -135,5 +135,29 @@ console.log('\nlifecycle:');
   ok('retry restores lives', rt.lives === E.MAX_LIVES);
 }
 
+// --- daily challenge: deterministic, same board for the same (date, difficulty)
+console.log('\ndaily challenge determinism:');
+{
+  const a1 = E.newDailyGame('2026-08-07', 'intermediate');
+  const a2 = E.newDailyGame('2026-08-07', 'intermediate');
+  const b = E.newDailyGame('2026-08-08', 'intermediate');
+  ok('same date+difficulty -> identical cells', a1.cells.join(',') === a2.cells.join(','));
+  ok('same date+difficulty -> identical caps', a1.caps.join(',') === a2.caps.join(','));
+  ok('different date -> different board', a1.cells.join(',') !== b.cells.join(',') || a1.caps.join(',') !== b.caps.join(','));
+  ok('daily board fully packed', a1.cells.every(v => v > 0));
+  ok('daily board winnable', E.isWinnable(a1.cells, a1.caps, a1.n, a1.ratio));
+
+  for (const d of E.DAILY_DIFFICULTY_ORDER) {
+    const s = E.newDailyGame('2026-08-07', d);
+    const expected = E.DAILY_DIFFICULTIES[d];
+    ok(`${d}: correct grid size`, s.n === expected.n);
+    ok(`${d}: fully packed`, s.cells.every(v => v > 0));
+    ok(`${d}: winnable`, E.isWinnable(s.cells, s.caps, s.n, s.ratio));
+  }
+  const expertBoard = E.newDailyGame('2026-08-07', 'expert');
+  const masterBoard = E.newDailyGame('2026-08-07', 'master');
+  ok('same date, different difficulty -> different board', expertBoard.n !== masterBoard.n);
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

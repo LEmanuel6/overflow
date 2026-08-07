@@ -1,17 +1,51 @@
-import React, { useMemo } from 'react';
-import { View, Text, StyleSheet, ScrollView } from 'react-native';
+import React, { useMemo, useState } from 'react';
+import { View, Text, Pressable, StyleSheet, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../theme';
 import ScreenHeader from '../components/ScreenHeader';
 import Tray from '../components/Tray';
-import { ACHIEVEMENTS, ACHIEVEMENT_CATEGORIES } from '../data/achievements';
+import { ACHIEVEMENTS, groupForDisplay, progressLabel } from '../data/achievements';
 
-export default function AchievementsScreen({ stats, onBack, onHome, onStats, onAchievements, onSettings }) {
+export default function AchievementsScreen({ stats, dailyStats, onBack, onHome, onStats, onAchievements, onSettings }) {
   const theme = useTheme();
   const styles = useMemo(() => makeStyles(theme), [theme]);
+  const [openTrack, setOpenTrack] = useState(null);
 
-  const unlockedCount = ACHIEVEMENTS.filter((a) => a.check(stats)).length;
+  // Daily-sourced achievements (source: 'daily') are checked against the
+  // separate dailyStats blob, not the ladder stats blob — see achievements.js.
+  const blobFor = (a) => (a.source === 'daily' ? dailyStats : stats);
+
+  const unlockedCount = ACHIEVEMENTS.filter((a) => a.check(blobFor(a))).length;
+  const grouped = useMemo(() => groupForDisplay(), []);
+  const openGroup = openTrack
+    ? grouped.flatMap((c) => c.groups).find((g) => g.type === 'track' && g.id === openTrack)
+    : null;
+
+  const trayProps = { theme, active: 'achievements', onHome, onStats, onAchievements, onSettings };
+
+  if (openGroup) {
+    const groupBlob = blobFor(openGroup.items[0]);
+    const unlockedInTrack = openGroup.items.filter((a) => a.check(groupBlob)).length;
+    return (
+      <SafeAreaView style={styles.safe}>
+        <ScreenHeader
+          theme={theme}
+          title={openGroup.meta.title.toUpperCase()}
+          subtitle={`${unlockedInTrack} / ${openGroup.items.length} unlocked`}
+          onBack={() => setOpenTrack(null)}
+        />
+        <ScrollView style={styles.scroll} contentContainerStyle={styles.container}>
+          <View style={styles.section}>
+            {openGroup.items.map((a) => (
+              <Achievement key={a.id} styles={styles} theme={theme} achievement={a} unlocked={a.check(groupBlob)} stats={groupBlob} />
+            ))}
+          </View>
+        </ScrollView>
+        <Tray {...trayProps} />
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -22,17 +56,68 @@ export default function AchievementsScreen({ stats, onBack, onHome, onStats, onA
         onBack={onBack}
       />
       <ScrollView style={styles.scroll} contentContainerStyle={styles.container}>
-        {ACHIEVEMENT_CATEGORIES.map((category) => (
+        {grouped.map(({ category, groups }) => (
           <View key={category} style={styles.section}>
             <Text style={styles.sectionTitle}>{category}</Text>
-            {ACHIEVEMENTS.filter((a) => a.category === category).map((a) => (
-              <Achievement key={a.id} styles={styles} theme={theme} achievement={a} unlocked={a.check(stats)} stats={stats} />
+            {groups.map((g) => g.type === 'track' ? (
+              <TrackRow
+                key={g.id}
+                styles={styles}
+                theme={theme}
+                group={g}
+                stats={blobFor(g.items[0])}
+                onPress={() => setOpenTrack(g.id)}
+              />
+            ) : (
+              <Achievement
+                key={g.achievement.id}
+                styles={styles}
+                theme={theme}
+                achievement={g.achievement}
+                unlocked={g.achievement.check(blobFor(g.achievement))}
+                stats={blobFor(g.achievement)}
+              />
             ))}
           </View>
         ))}
       </ScrollView>
-      <Tray theme={theme} active="achievements" onHome={onHome} onStats={onStats} onAchievements={onAchievements} onSettings={onSettings} />
+      <Tray {...trayProps} />
     </SafeAreaView>
+  );
+}
+
+// One row per track on the summary list — collapses a whole ladder (e.g.
+// the six level-milestone achievements) into progress toward its next
+// un-cleared tier. Tapping drills into the full ladder via onPress.
+function TrackRow({ styles, theme, group, stats, onPress }) {
+  const { meta, items } = group;
+  const unlockedCount = items.filter((a) => a.check(stats)).length;
+  const nextLocked = items.find((a) => !a.check(stats));
+  const complete = !nextLocked;
+  const activeItem = nextLocked || items[items.length - 1];
+  const progress = activeItem.progress(stats);
+  const fraction = Math.min(1, progress.current / progress.target);
+
+  return (
+    <Pressable style={[styles.card, complete && styles.cardUnlocked]} onPress={onPress}>
+      <View style={styles.cardHeader}>
+        <View style={[styles.badge, complete && styles.badgeUnlocked]}>
+          <Ionicons name={activeItem.icon} size={17} color={complete ? theme.color.ok : theme.color.inkSoft} />
+        </View>
+        <Text style={[styles.cardTitle, styles.cardTitleGrow, !complete && styles.dim]}>{meta.title}</Text>
+        <Text style={styles.trackCount}>{unlockedCount}/{items.length}</Text>
+        <Ionicons name="chevron-forward" size={18} color={theme.color.inkSoft} />
+      </View>
+      <Text style={[styles.cardDesc, !complete && styles.dim]}>
+        {complete ? 'All milestones reached' : activeItem.description}
+      </Text>
+      <View style={styles.progressRow}>
+        <View style={styles.progressTrack}>
+          <View style={[styles.progressFill, { width: `${fraction * 100}%` }]} />
+        </View>
+        <Text style={styles.progressText}>{progressLabel(activeItem, progress)}</Text>
+      </View>
+    </Pressable>
   );
 }
 
@@ -54,7 +139,7 @@ function Achievement({ styles, theme, achievement, unlocked, stats }) {
           <View style={styles.progressTrack}>
             <View style={[styles.progressFill, { width: `${fraction * 100}%` }]} />
           </View>
-          <Text style={styles.progressText}>{progress.current}/{progress.target}</Text>
+          <Text style={styles.progressText}>{progressLabel(achievement, progress)}</Text>
         </View>
       )}
     </View>
@@ -83,6 +168,8 @@ function makeStyles(theme) {
     },
     badgeUnlocked: { backgroundColor: theme.color.okSoft, borderColor: theme.color.ok },
     cardTitle: { fontFamily: theme.font.bold, fontSize: 18, color: theme.color.ink },
+    cardTitleGrow: { flex: 1 },
+    trackCount: { fontFamily: theme.font.regular, fontSize: 14, color: theme.color.inkSoft },
     cardDesc: { fontFamily: theme.font.regular, fontSize: 18, color: theme.color.inkSoft, marginTop: 4, marginLeft: 42 },
     dim: { opacity: 0.65 },
     progressRow: { flexDirection: 'row', alignItems: 'center', marginTop: 8, marginLeft: 42, gap: 8 },

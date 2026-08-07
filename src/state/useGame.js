@@ -51,8 +51,24 @@ function diagonalBands(count, n, staggerMax, totalTarget) {
   return { bands, keys, stagger };
 }
 
-export function useGame(statsApi) {
-  const [state, setState] = useState(() => Engine.newGame(1));
+// opts lets a second consumer (the daily challenge) reuse this hook's whole
+// animation engine (cascade stepping, wipe, reveal — untouched below) while
+// swapping out just the ladder-specific bits: board generation, whether
+// progress persists to AsyncStorage, and where win/loss/tap/start events are
+// reported. Every default below reproduces today's exact ladder behavior, so
+// useGame(statsApi) with no opts is unchanged.
+export function useGame(statsApi, opts = {}) {
+  const {
+    initialState,                                   // () => state; default Engine.newGame(1)
+    persistProgress = true,                          // gates AsyncStorage resume/persist
+    regenerate,                                      // (state) => state; used by retry()
+    onWon = (s) => statsApi?.boardWon({ level: s.level, n: s.n, taps: s.taps, lives: s.lives }),
+    onLost = () => statsApi?.boardLost(),
+    onBoardStarted = () => statsApi?.boardStarted(),
+    onTapped = (info) => statsApi?.tapped(info),
+  } = opts;
+
+  const [state, setState] = useState(() => (initialState ? initialState() : Engine.newGame(1)));
   const [display, setDisplay] = useState(state.cells);   // what the board shows (may lag during cascade)
   const [bursting, setBursting] = useState([]);          // indices currently popping
   const [wiping, setWiping] = useState([]);               // indices currently fading in the win-wipe
@@ -62,9 +78,16 @@ export function useGame(statsApi) {
   const [boardId, setBoardId] = useState(0);              // bumps whenever a NEW board is generated
   const timers = useRef([]);
 
-  // --- persistence ----------------------------------------------------------
+  // --- persistence ------------------------------------------------------
+  // Ladder mode resumes a saved level from AsyncStorage on mount. A mode that
+  // opts out (persistProgress: false, e.g. the daily challenge) just reveals
+  // whatever initialState() already produced — no storage touch at all.
   useEffect(() => {
-    statsApi.boardStarted(); // the default level-1 board created above counts too
+    onBoardStarted(); // the initial board created above counts too
+    if (!persistProgress) {
+      runBoardReveal(state.n);
+      return () => timers.current.forEach(clearTimeout);
+    }
     (async () => {
       let loadedSaved = false;
       try {
@@ -75,7 +98,7 @@ export function useGame(statsApi) {
             const g = Engine.newGame(saved.level);
             setState(g); setDisplay(g.cells); setStatus('play');
             setBoardId((id) => id + 1);
-            statsApi.boardStarted();
+            onBoardStarted();
             runBoardReveal(g.n);
             loadedSaved = true;
           }
@@ -101,8 +124,14 @@ export function useGame(statsApi) {
   const settleWin = useCallback((wonState) => {
     setStatus('won');
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
-    statsApi.boardWon({ level: wonState.level, n: wonState.n, taps: wonState.taps, lives: wonState.lives });
-  }, [statsApi]);
+    onWon(wonState);
+  }, [onWon]);
+
+  const settleLoss = useCallback(() => {
+    setStatus('lost');
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => {});
+    onLost();
+  }, [onLost]);
 
   // A cleared board wipes in a diagonal wave (band = row + col) rather than
   // popping straight to empty. `cells` is the pre-sweep board (still holding
@@ -149,7 +178,7 @@ export function useGame(statsApi) {
     const res = Engine.tap(state, i);
     if (res.result === 'ignored') return;
 
-    statsApi.tapped({ bursts: res.bursts, livesLost: res.livesLost || 0, cells: res.state.cells, ratio: state.ratio });
+    onTapped({ bursts: res.bursts, livesLost: res.livesLost || 0 });
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
 
     // clean tap, no cascade
@@ -192,9 +221,7 @@ export function useGame(statsApi) {
       if (res.result === 'lost') {
         setDisplay(res.state.cells);
         setBusy(false);
-        setStatus('lost');
-        statsApi.boardLost();
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => {});
+        settleLoss();
       } else if (res.result === 'won') {
         const preWin = res.frames[res.frames.length - 1];
         setDisplay(preWin);
@@ -204,17 +231,29 @@ export function useGame(statsApi) {
         setBusy(false);
       }
     });
-  }, [state, busy, status, runWinWipe, statsApi]);
+  }, [state, busy, status, runWinWipe, settleLoss, onTapped]);
 
   // --- controls -------------------------------------------------------------
   const retry = useCallback(() => {
     clearTimers();
-    const g = Engine.retry(state);
+    const g = (regenerate || Engine.retry)(state);
     setState(g); setDisplay(g.cells); setBursting([]); setWiping([]); setStatus('play'); setBusy(false);
     setBoardId((id) => id + 1);
-    statsApi.boardStarted();
+    onBoardStarted();
     runBoardReveal(g.n);
-  }, [state, statsApi, runBoardReveal]);
+  }, [state, regenerate, onBoardStarted, runBoardReveal]);
+
+  // External forced loss (e.g. a daily-challenge countdown hitting zero) —
+  // mirrors the cascade-lost path in tap() above. Guarded so it's a no-op if
+  // the board already resolved, or (defensively) mid-cascade — the countdown
+  // this is designed for only decrements while idle, so busy should never be
+  // true here in practice.
+  const forceTimeout = useCallback(() => {
+    if (status !== 'play' || busy) return;
+    clearTimers();
+    setDisplay(state.cells);
+    settleLoss();
+  }, [status, busy, state, settleLoss]);
 
   const restart = useCallback(() => {
     clearTimers();
@@ -240,7 +279,7 @@ export function useGame(statsApi) {
 
   return {
     state, display, bursting, wiping, revealing, busy, status, boardId,
-    tap, retry, restart, continueNext,
+    tap, retry, restart, continueNext, forceTimeout,
     // rendering hints
     isGreen: (v) => Engine.isGreen(v, state.ratio),
   };

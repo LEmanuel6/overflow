@@ -13,7 +13,6 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import * as Engine from '../engine';
 import { ACHIEVEMENTS } from '../data/achievements';
 
 const STORE_KEY = 'overflow:stats:v1';
@@ -30,7 +29,7 @@ const DEFAULT_STATS = {
   totalCascades: 0,
   clearedByTier: {},        // { "3": n, "4": n, ... } keyed by grid size
   highestGridSize: 3,
-  longestChain: 0,
+  bigChainCount: 0,         // number of taps that triggered a 5+ burst cascade
   bestStreak: 0,
   currentStreak: 0,
   flawlessStreak: 0,
@@ -39,8 +38,6 @@ const DEFAULT_STATS = {
   fewestTapsToClear: null,
   mostLivesRemainingOnClear: 0,
   narrowestWinLives: null,
-  comebackWins: 0,
-  greenThumbClears: 0,
   bestClearTimeMs: null,
   totalPlaytimeMs: 0,
   sessionsPlayed: 0,
@@ -48,6 +45,9 @@ const DEFAULT_STATS = {
   dayStreak: 0,
   bestDayStreak: 0,
   lastPlayedDate: null,
+  clearsToday: 0,
+  bestDayClears: 0,
+  bestSessionMs: 0,
   unlockedAt: {},           // { [achievementId]: epoch ms } — stamped the moment `check()` first passes
 };
 
@@ -64,10 +64,14 @@ function yesterdayStr() {
 
 // Stamps any achievement that newly passes `check()` with the current time.
 // Called on every stats update so "recently unlocked" has real timestamps to
-// sort by, without a separate unlock-state store to keep in sync.
+// sort by, without a separate unlock-state store to keep in sync. Skips
+// daily-sourced achievements (source: 'daily') — those are checked against
+// the separate dailyStats blob, which this hook doesn't have; useDailyStats.js
+// stamps those into its own unlockedAt map instead (see withDailyUnlocks).
 function withUnlocks(next) {
   let unlockedAt = next.unlockedAt;
   for (const a of ACHIEVEMENTS) {
+    if (a.source === 'daily') continue;
     if (!unlockedAt[a.id] && a.check(next)) {
       if (unlockedAt === next.unlockedAt) unlockedAt = { ...unlockedAt };
       unlockedAt[a.id] = Date.now();
@@ -84,9 +88,8 @@ export function useStats() {
   // boardWon()/boardLost(). Not persisted: if the app is killed mid-board
   // these just reset, which is fine (nothing was won or lost yet).
   const livesLostThisBoardRef = useRef(0);
-  const hadMostlyGreenRef = useRef(false);
   const boardStartTimeRef = useRef(Date.now());
-  const lastBoardWasLossRef = useRef(false);
+  const sessionStartRef = useRef(Date.now());
 
   const persist = useCallback((next) => {
     AsyncStorage.setItem(STORE_KEY, JSON.stringify(next)).catch(() => {});
@@ -120,9 +123,11 @@ export function useStats() {
       const today = todayStr();
       let dayStreak = loaded.dayStreak;
       let daysPlayed = loaded.daysPlayed;
+      let clearsToday = loaded.clearsToday;
       if (loaded.lastPlayedDate !== today) {
         dayStreak = loaded.lastPlayedDate === yesterdayStr() ? loaded.dayStreak + 1 : 1;
         daysPlayed = [...loaded.daysPlayed, today].slice(-400);
+        clearsToday = 0;
       }
       const next = withUnlocks({
         ...loaded,
@@ -130,6 +135,7 @@ export function useStats() {
         lastPlayedDate: today,
         dayStreak,
         daysPlayed,
+        clearsToday,
         bestDayStreak: Math.max(loaded.bestDayStreak, dayStreak),
       });
       loadedRef.current = true;
@@ -142,7 +148,12 @@ export function useStats() {
   useEffect(() => {
     const iv = setInterval(() => {
       setStats((prev) => {
-        const next = { ...prev, totalPlaytimeMs: prev.totalPlaytimeMs + PLAYTIME_TICK_MS };
+        const sessionElapsedMs = Date.now() - sessionStartRef.current;
+        const next = {
+          ...prev,
+          totalPlaytimeMs: prev.totalPlaytimeMs + PLAYTIME_TICK_MS,
+          bestSessionMs: Math.max(prev.bestSessionMs, sessionElapsedMs),
+        };
         persist(next);
         return next;
       });
@@ -153,23 +164,17 @@ export function useStats() {
   // --- recorders, called by useGame at the right lifecycle points -----------
   const boardStarted = useCallback(() => {
     livesLostThisBoardRef.current = 0;
-    hadMostlyGreenRef.current = false;
     boardStartTimeRef.current = Date.now();
   }, []);
 
   // Dev-only: wipe lifetime stats + achievement unlocks back to a blank slate.
   const reset = useCallback(() => {
     livesLostThisBoardRef.current = 0;
-    hadMostlyGreenRef.current = false;
-    lastBoardWasLossRef.current = false;
     setStats(DEFAULT_STATS);
     persist(DEFAULT_STATS);
   }, [persist]);
 
-  const tapped = useCallback(({ bursts, livesLost, cells, ratio }) => {
-    const filled = cells.filter((v) => v > 0);
-    const greenCount = filled.filter((v) => Engine.isGreen(v, ratio)).length;
-    if (filled.length && greenCount / filled.length > 0.5) hadMostlyGreenRef.current = true;
+  const tapped = useCallback(({ bursts, livesLost }) => {
     livesLostThisBoardRef.current += livesLost;
 
     setStats((prev) => {
@@ -179,7 +184,7 @@ export function useStats() {
         totalBursts: prev.totalBursts + bursts.length,
         totalCascades: prev.totalCascades + (bursts.length > 0 ? 1 : 0),
         totalLivesLost: prev.totalLivesLost + livesLost,
-        longestChain: Math.max(prev.longestChain, bursts.length),
+        bigChainCount: prev.bigChainCount + (bursts.length >= 5 ? 1 : 0),
       });
       persist(next);
       return next;
@@ -187,7 +192,6 @@ export function useStats() {
   }, [persist]);
 
   const boardLost = useCallback(() => {
-    lastBoardWasLossRef.current = true;
     setStats((prev) => {
       const next = withUnlocks({
         ...prev,
@@ -203,18 +207,18 @@ export function useStats() {
 
   const boardWon = useCallback(({ level, n, taps, lives }) => {
     const livesLostThisBoard = livesLostThisBoardRef.current;
-    const hadMostlyGreen = hadMostlyGreenRef.current;
     const elapsedMs = Date.now() - boardStartTimeRef.current;
-    const wasComeback = lastBoardWasLossRef.current;
-    lastBoardWasLossRef.current = false;
 
     setStats((prev) => {
       const tierKey = String(n);
       const nextStreak = prev.currentStreak + 1;
       const nextFlawlessStreak = livesLostThisBoard === 0 ? prev.flawlessStreak + 1 : 0;
+      const nextClearsToday = prev.clearsToday + 1;
       const next = withUnlocks({
         ...prev,
         best: Math.max(prev.best, level + 1),
+        clearsToday: nextClearsToday,
+        bestDayClears: Math.max(prev.bestDayClears, nextClearsToday),
         boardsCleared: prev.boardsCleared + 1,
         gamesPlayed: prev.gamesPlayed + 1,
         clearedByTier: { ...prev.clearedByTier, [tierKey]: (prev.clearedByTier[tierKey] || 0) + 1 },
@@ -227,8 +231,6 @@ export function useStats() {
         fewestTapsToClear: prev.fewestTapsToClear == null ? taps : Math.min(prev.fewestTapsToClear, taps),
         mostLivesRemainingOnClear: Math.max(prev.mostLivesRemainingOnClear, lives),
         narrowestWinLives: prev.narrowestWinLives == null ? lives : Math.min(prev.narrowestWinLives, lives),
-        comebackWins: prev.comebackWins + (wasComeback ? 1 : 0),
-        greenThumbClears: prev.greenThumbClears + (hadMostlyGreen ? 1 : 0),
         bestClearTimeMs: prev.bestClearTimeMs == null ? elapsedMs : Math.min(prev.bestClearTimeMs, elapsedMs),
       });
       persist(next);

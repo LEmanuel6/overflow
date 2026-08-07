@@ -180,10 +180,10 @@ function Cell({ value, cap, push, size, boardId, isGreen, isBursting, isWiping, 
           : styles.fillFilled;
 
   // Scale text to the cell — boards can grow well past 5x5, shrinking `size`.
-  const numSize = Math.max(9, Math.min(20, size * 0.34));
-  const capSize = Math.max(6, Math.min(11, size * 0.19));
-  const pushSize = Math.max(6, Math.min(10, size * 0.17));
-  const popupSize = Math.max(8, Math.min(13, size * 0.22));
+  const numSize = Math.max(10, Math.min(31, size * 0.41));
+  const capSize = Math.max(7, Math.min(16, size * 0.24));
+  const pushSize = Math.max(7, Math.min(13, size * 0.20));
+  const popupSize = Math.max(10, Math.min(17, size * 0.27));
 
   return (
     <Pressable
@@ -272,7 +272,7 @@ function makeStyles(theme) {
     num: { fontFamily: theme.font.bold, fontSize: 20, color: theme.color.ink },
     numFull: { color: theme.color.signal },
     numGreen: { color: theme.color.ok },
-    cap: { fontFamily: theme.font.semiBold, fontSize: 14, color: theme.color.inkSoft, marginBottom: 2, opacity: 0.75 },
+    cap: { fontFamily: theme.font.bold, fontSize: 14, color: theme.color.inkSoft, marginBottom: 2, opacity: 0.75 },
     push: { fontFamily: theme.font.semiBold, color: theme.color.inkSoft, opacity: 0.65, marginTop: 1 },
     floatDelta: {
       position: 'absolute', top: 0, alignSelf: 'center',
