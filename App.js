@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
@@ -22,12 +22,16 @@ import { useStats } from './src/state/useStats';
 import { useDailyStats } from './src/state/useDailyStats';
 import { ThemeProvider, darkTheme, lightTheme } from './src/theme';
 
-// Screens that show the bottom tab bar. Tray is rendered exactly once, here,
-// as a sibling of the swapped screen content rather than nested inside each
-// screen — so switching between these five doesn't tear the tray itself down
-// and rebuild it (that full remount, not a background-colour mismatch, was
-// the actual source of the "flicker on the bottom bar").
+// Screens that show the bottom tab bar. Tray itself is rendered exactly
+// once, as a sibling of the swapped screen content, so switching tabs
+// doesn't tear the tray down and rebuild it. That alone wasn't enough,
+// though: each screen's CONTENT was still conditionally mounted/unmounted
+// on every switch, which is its own source of a transition-frame flicker
+// independent of the tray. See visitedRef below for the actual fix.
 const TRAY_SCREENS = new Set(['menu', 'stats', 'achievements', 'settings', 'dailyHub']);
+
+const FULL = { flex: 1 };
+const HIDDEN = { display: 'none' };
 
 export default function App() {
   const [screen, setScreen] = useState('menu');
@@ -41,6 +45,15 @@ export default function App() {
     Quicksand_600SemiBold,
     Quicksand_700Bold,
   });
+
+  // Tracks which tray-screens have ever been visited this session. Each one
+  // mounts once, lazily, on first visit, then stays mounted for the rest of
+  // the session — switching tabs afterward is a pure display:none/flex
+  // toggle on an already-painted tree, never an unmount+remount. That's what
+  // actually eliminates the transition flicker (a persistent Tray alone only
+  // fixed the tray's own flicker, not the content area's).
+  const visitedRef = useRef(new Set());
+  if (TRAY_SCREENS.has(screen)) visitedRef.current.add(screen);
 
   if (!fontsLoaded) {
     return <View style={{ flex: 1, backgroundColor: darkTheme.color.paper }} />;
@@ -70,38 +83,48 @@ export default function App() {
         <StatusBar style={settings.darkMode ? 'light' : 'dark'} />
         <View style={{ flex: 1, backgroundColor: theme.color.paper }}>
           <View style={{ flex: 1 }}>
-            {screen === 'menu' && (
-              <MenuScreen
-                level={g.state.level}
-                stats={statsApi.stats}
-                onPlay={() => setScreen('game')}
-                onReset={onReset}
-                dailyStats={dailyStatsApi.dailyStats}
-                onDaily={goDailyHub}
-                onAchievements={goAchievements}
-              />
+            {visitedRef.current.has('menu') && (
+              <View style={screen === 'menu' ? FULL : HIDDEN}>
+                <MenuScreen
+                  level={g.state.level}
+                  stats={statsApi.stats}
+                  onPlay={() => setScreen('game')}
+                  onReset={onReset}
+                  dailyStats={dailyStatsApi.dailyStats}
+                  onDaily={goDailyHub}
+                  onAchievements={goAchievements}
+                />
+              </View>
             )}
             {screen === 'game' && <GameScreen g={g} stats={statsApi.stats} onMenu={goMenu} />}
-            {screen === 'dailyHub' && (
-              <DailyHubScreen dailyStatsApi={dailyStatsApi} onBack={goMenu} onSelectDifficulty={goDailyPlay} />
+            {visitedRef.current.has('dailyHub') && (
+              <View style={screen === 'dailyHub' ? FULL : HIDDEN}>
+                <DailyHubScreen dailyStatsApi={dailyStatsApi} onBack={goMenu} onSelectDifficulty={goDailyPlay} />
+              </View>
             )}
             {screen === 'dailyPlay' && (
               <DailyChallengeScreen difficulty={dailyDifficulty} dailyStatsApi={dailyStatsApi} onBack={goDailyHub} />
             )}
-            {screen === 'stats' && (
-              <StatsScreen stats={statsApi.stats} dailyStats={dailyStatsApi.dailyStats} onBack={goMenu} />
+            {visitedRef.current.has('stats') && (
+              <View style={screen === 'stats' ? FULL : HIDDEN}>
+                <StatsScreen stats={statsApi.stats} dailyStats={dailyStatsApi.dailyStats} onBack={goMenu} />
+              </View>
             )}
-            {screen === 'achievements' && (
-              <AchievementsScreen stats={statsApi.stats} dailyStats={dailyStatsApi.dailyStats} onBack={goMenu} />
+            {visitedRef.current.has('achievements') && (
+              <View style={screen === 'achievements' ? FULL : HIDDEN}>
+                <AchievementsScreen stats={statsApi.stats} dailyStats={dailyStatsApi.dailyStats} onBack={goMenu} />
+              </View>
             )}
-            {screen === 'settings' && (
-              <SettingsScreen
-                darkMode={settings.darkMode}
-                setDarkMode={settings.setDarkMode}
-                sound={settings.sound}
-                setSound={settings.setSound}
-                onBack={goMenu}
-              />
+            {visitedRef.current.has('settings') && (
+              <View style={screen === 'settings' ? FULL : HIDDEN}>
+                <SettingsScreen
+                  darkMode={settings.darkMode}
+                  setDarkMode={settings.setDarkMode}
+                  sound={settings.sound}
+                  setSound={settings.setSound}
+                  onBack={goMenu}
+                />
+              </View>
             )}
           </View>
           {TRAY_SCREENS.has(screen) && (
