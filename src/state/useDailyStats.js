@@ -156,5 +156,13 @@ export function useDailyStats() {
     });
   }, [persist]);
 
-  return { dailyStats, recordResult };
+  // Dev-only / user-triggered: wipe daily-challenge history + achievement
+  // unlocks back to a blank slate. Mirrors useStats.js's reset().
+  const reset = useCallback(() => {
+    const fresh = makeDefaultDailyStats();
+    setDailyStats(fresh);
+    persist(fresh);
+  }, [persist]);
+
+  return { dailyStats, recordResult, reset };
 }

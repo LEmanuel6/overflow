@@ -49,6 +49,7 @@ export default function App() {
   const onReset = () => {
     g.restart();
     statsApi.reset();
+    dailyStatsApi.reset();
   };
 
   return (

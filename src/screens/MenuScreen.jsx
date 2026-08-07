@@ -95,7 +95,7 @@ export default function MenuScreen({ level, stats, onPlay, onReset, onHome, onSt
         theme={theme}
         visible={confirmingReset}
         title="Reset progress?"
-        message="This clears your level, stats, and achievements. Settings are kept."
+        message="This clears your level, stats, achievements, and daily challenge history. Settings are kept."
         confirmLabel="Reset"
         onCancel={() => setConfirmingReset(false)}
         onConfirm={handleReset}
