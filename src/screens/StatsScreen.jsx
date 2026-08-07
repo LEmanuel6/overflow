@@ -3,11 +3,11 @@ import { View, Text, StyleSheet, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme } from '../theme';
 import ScreenHeader from '../components/ScreenHeader';
-import Tray from '../components/Tray';
 import { formatNumber, formatDuration, formatPercent } from '../utils/format';
 import { DAILY_DIFFICULTY_ORDER, DAILY_DIFFICULTIES } from '../engine';
 
-export default function StatsScreen({ stats, dailyStats, onBack, onHome, onStats, onAchievements, onSettings }) {
+// Tray is rendered once, persistently, by App.js — not here (see Tray.jsx).
+export default function StatsScreen({ stats, dailyStats, onBack }) {
   const theme = useTheme();
   const styles = useMemo(() => makeStyles(theme), [theme]);
 
@@ -16,7 +16,7 @@ export default function StatsScreen({ stats, dailyStats, onBack, onHome, onStats
     : 0;
 
   return (
-    <SafeAreaView style={styles.safe}>
+    <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
       <ScreenHeader theme={theme} title="STATS" onBack={onBack} />
       <ScrollView style={styles.scroll} contentContainerStyle={styles.container}>
         <Section styles={styles} title="Progress" rows={[
@@ -65,7 +65,6 @@ export default function StatsScreen({ stats, dailyStats, onBack, onHome, onStats
           ]} />
         )}
       </ScrollView>
-      <Tray theme={theme} active="stats" onHome={onHome} onStats={onStats} onAchievements={onAchievements} onSettings={onSettings} />
     </SafeAreaView>
   );
 }

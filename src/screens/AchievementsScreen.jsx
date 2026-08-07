@@ -4,10 +4,12 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../theme';
 import ScreenHeader from '../components/ScreenHeader';
-import Tray from '../components/Tray';
 import { ACHIEVEMENTS, groupForDisplay, progressLabel } from '../data/achievements';
 
-export default function AchievementsScreen({ stats, dailyStats, onBack, onHome, onStats, onAchievements, onSettings }) {
+// Tray is rendered once, persistently, by App.js — not here (see Tray.jsx).
+// Note this means it stays mounted across the openTrack drill-down below too
+// — that internal navigation no longer causes the tray to flicker either.
+export default function AchievementsScreen({ stats, dailyStats, onBack }) {
   const theme = useTheme();
   const styles = useMemo(() => makeStyles(theme), [theme]);
   const [openTrack, setOpenTrack] = useState(null);
@@ -22,13 +24,11 @@ export default function AchievementsScreen({ stats, dailyStats, onBack, onHome, 
     ? grouped.flatMap((c) => c.groups).find((g) => g.type === 'track' && g.id === openTrack)
     : null;
 
-  const trayProps = { theme, active: 'achievements', onHome, onStats, onAchievements, onSettings };
-
   if (openGroup) {
     const groupBlob = blobFor(openGroup.items[0]);
     const unlockedInTrack = openGroup.items.filter((a) => a.check(groupBlob)).length;
     return (
-      <SafeAreaView style={styles.safe}>
+      <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
         <ScreenHeader
           theme={theme}
           title={openGroup.meta.title.toUpperCase()}
@@ -42,13 +42,12 @@ export default function AchievementsScreen({ stats, dailyStats, onBack, onHome, 
             ))}
           </View>
         </ScrollView>
-        <Tray {...trayProps} />
       </SafeAreaView>
     );
   }
 
   return (
-    <SafeAreaView style={styles.safe}>
+    <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
       <ScreenHeader
         theme={theme}
         title="ACHIEVEMENTS"
@@ -81,7 +80,6 @@ export default function AchievementsScreen({ stats, dailyStats, onBack, onHome, 
           </View>
         ))}
       </ScrollView>
-      <Tray {...trayProps} />
     </SafeAreaView>
   );
 }

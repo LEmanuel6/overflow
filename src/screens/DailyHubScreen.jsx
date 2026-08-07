@@ -4,7 +4,6 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../theme';
 import ScreenHeader from '../components/ScreenHeader';
-import Tray from '../components/Tray';
 import * as Engine from '../engine';
 import { localDateStr, totalAttemptsForDay } from '../state/useDailyStats';
 import { formatTimeMs } from '../utils/format';
@@ -19,14 +18,15 @@ const DIFFICULTY_ICONS = {
 // The difficulty-selection screen between the menu's "Daily Challenge" card
 // and an actual DailyChallengeScreen(difficulty) attempt — Beginner through
 // Master are effectively four separate daily puzzles (see useDailyStats.js).
-export default function DailyHubScreen({ dailyStatsApi, onBack, onSelectDifficulty, onHome, onStats, onAchievements, onSettings }) {
+// Tray is rendered once, persistently, by App.js — not here (see Tray.jsx).
+export default function DailyHubScreen({ dailyStatsApi, onBack, onSelectDifficulty }) {
   const theme = useTheme();
   const styles = useMemo(() => makeStyles(theme), [theme]);
   const today = localDateStr();
   const totalToday = totalAttemptsForDay(dailyStatsApi.dailyStats, today);
 
   return (
-    <SafeAreaView style={styles.safe}>
+    <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
       <ScreenHeader
         theme={theme}
         title="DAILY CHALLENGES"
@@ -63,7 +63,6 @@ export default function DailyHubScreen({ dailyStatsApi, onBack, onSelectDifficul
           );
         })}
       </ScrollView>
-      <Tray theme={theme} onHome={onHome} onStats={onStats} onAchievements={onAchievements} onSettings={onSettings} />
     </SafeAreaView>
   );
 }

@@ -3,14 +3,14 @@ import { View, Text, Pressable, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme } from '../theme';
 import Switch from '../components/Switch';
-import Tray from '../components/Tray';
 
-export default function SettingsScreen({ darkMode, setDarkMode, sound, setSound, onBack, onHome, onStats, onAchievements, onSettings }) {
+// Tray is rendered once, persistently, by App.js — not here (see Tray.jsx).
+export default function SettingsScreen({ darkMode, setDarkMode, sound, setSound, onBack }) {
   const theme = useTheme();
   const styles = useMemo(() => makeStyles(theme), [theme]);
 
   return (
-    <SafeAreaView style={styles.safe}>
+    <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
       <View style={styles.container}>
         <Text style={styles.title}>SETTINGS</Text>
 
@@ -27,7 +27,6 @@ export default function SettingsScreen({ darkMode, setDarkMode, sound, setSound,
           <Text style={styles.buttonText}>Back</Text>
         </Pressable>
       </View>
-      <Tray theme={theme} active="settings" onHome={onHome} onStats={onStats} onAchievements={onAchievements} onSettings={onSettings} />
     </SafeAreaView>
   );
 }

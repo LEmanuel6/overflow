@@ -3,7 +3,6 @@ import { View, Text, Pressable, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../theme';
-import Tray from '../components/Tray';
 import ConfirmDialog from '../components/ConfirmDialog';
 import { ACHIEVEMENTS, ACHIEVEMENTS_BY_ID } from '../data/achievements';
 import { localDateStr, totalAttemptsForDay, completedCountForDay } from '../state/useDailyStats';
@@ -11,7 +10,8 @@ import { DAILY_DIFFICULTY_ORDER } from '../engine';
 
 const RECENT_LIMIT = 3;
 
-export default function MenuScreen({ level, stats, onPlay, onReset, onHome, onStats, onAchievements, onSettings, dailyStats, onDaily }) {
+// Tray is rendered once, persistently, by App.js — not here (see Tray.jsx).
+export default function MenuScreen({ level, stats, onPlay, onReset, onAchievements, dailyStats, onDaily }) {
   const theme = useTheme();
   const styles = useMemo(() => makeStyles(theme), [theme]);
   // Daily-sourced achievements (source: 'daily') live in the separate
@@ -40,7 +40,7 @@ export default function MenuScreen({ level, stats, onPlay, onReset, onHome, onSt
     : 'Not played yet today';
 
   return (
-    <SafeAreaView style={styles.safe}>
+    <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
       <Pressable style={styles.recent} onPress={onAchievements}>
         <Text style={styles.recentLabel}>Recent achievements</Text>
         {recent.length === 0 ? (
@@ -88,8 +88,6 @@ export default function MenuScreen({ level, stats, onPlay, onReset, onHome, onSt
           <Text style={styles.resetButtonText}>Reset</Text>
         </Pressable>
       </View>
-
-      <Tray theme={theme} active="menu" onHome={onHome} onStats={onStats} onAchievements={onAchievements} onSettings={onSettings} />
 
       <ConfirmDialog
         theme={theme}

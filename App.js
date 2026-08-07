@@ -15,11 +15,19 @@ import DailyChallengeScreen from './src/screens/DailyChallengeScreen';
 import SettingsScreen from './src/screens/SettingsScreen';
 import StatsScreen from './src/screens/StatsScreen';
 import AchievementsScreen from './src/screens/AchievementsScreen';
+import Tray from './src/components/Tray';
 import { useGame } from './src/state/useGame';
 import { useSettings } from './src/state/useSettings';
 import { useStats } from './src/state/useStats';
 import { useDailyStats } from './src/state/useDailyStats';
-import { ThemeProvider, darkTheme } from './src/theme';
+import { ThemeProvider, darkTheme, lightTheme } from './src/theme';
+
+// Screens that show the bottom tab bar. Tray is rendered exactly once, here,
+// as a sibling of the swapped screen content rather than nested inside each
+// screen — so switching between these five doesn't tear the tray itself down
+// and rebuild it (that full remount, not a background-colour mismatch, was
+// the actual source of the "flicker on the bottom bar").
+const TRAY_SCREENS = new Set(['menu', 'stats', 'achievements', 'settings', 'dailyHub']);
 
 export default function App() {
   const [screen, setScreen] = useState('menu');
@@ -44,7 +52,6 @@ export default function App() {
   const goSettings = () => setScreen('settings');
   const goDailyHub = () => setScreen('dailyHub');
   const goDailyPlay = (difficulty) => { setDailyDifficulty(difficulty); setScreen('dailyPlay'); };
-  const tabNav = { onHome: goMenu, onStats: goStats, onAchievements: goAchievements, onSettings: goSettings };
 
   const onReset = () => {
     g.restart();
@@ -52,44 +59,62 @@ export default function App() {
     dailyStatsApi.reset();
   };
 
+  // App itself renders ThemeProvider, so it can't call useTheme() (that only
+  // works in a descendant) — derive the same paper colour directly for the
+  // persistent wrapper's background.
+  const theme = settings.darkMode ? darkTheme : lightTheme;
+
   return (
     <SafeAreaProvider>
       <ThemeProvider darkMode={settings.darkMode}>
         <StatusBar style={settings.darkMode ? 'light' : 'dark'} />
-        {screen === 'menu' && (
-          <MenuScreen
-            level={g.state.level}
-            stats={statsApi.stats}
-            onPlay={() => setScreen('game')}
-            onReset={onReset}
-            dailyStats={dailyStatsApi.dailyStats}
-            onDaily={goDailyHub}
-            {...tabNav}
-          />
-        )}
-        {screen === 'game' && <GameScreen g={g} stats={statsApi.stats} onMenu={goMenu} />}
-        {screen === 'dailyHub' && (
-          <DailyHubScreen dailyStatsApi={dailyStatsApi} onBack={goMenu} onSelectDifficulty={goDailyPlay} {...tabNav} />
-        )}
-        {screen === 'dailyPlay' && (
-          <DailyChallengeScreen difficulty={dailyDifficulty} dailyStatsApi={dailyStatsApi} onBack={goDailyHub} />
-        )}
-        {screen === 'stats' && (
-          <StatsScreen stats={statsApi.stats} dailyStats={dailyStatsApi.dailyStats} onBack={goMenu} {...tabNav} />
-        )}
-        {screen === 'achievements' && (
-          <AchievementsScreen stats={statsApi.stats} dailyStats={dailyStatsApi.dailyStats} onBack={goMenu} {...tabNav} />
-        )}
-        {screen === 'settings' && (
-          <SettingsScreen
-            darkMode={settings.darkMode}
-            setDarkMode={settings.setDarkMode}
-            sound={settings.sound}
-            setSound={settings.setSound}
-            onBack={goMenu}
-            {...tabNav}
-          />
-        )}
+        <View style={{ flex: 1, backgroundColor: theme.color.paper }}>
+          <View style={{ flex: 1 }}>
+            {screen === 'menu' && (
+              <MenuScreen
+                level={g.state.level}
+                stats={statsApi.stats}
+                onPlay={() => setScreen('game')}
+                onReset={onReset}
+                dailyStats={dailyStatsApi.dailyStats}
+                onDaily={goDailyHub}
+                onAchievements={goAchievements}
+              />
+            )}
+            {screen === 'game' && <GameScreen g={g} stats={statsApi.stats} onMenu={goMenu} />}
+            {screen === 'dailyHub' && (
+              <DailyHubScreen dailyStatsApi={dailyStatsApi} onBack={goMenu} onSelectDifficulty={goDailyPlay} />
+            )}
+            {screen === 'dailyPlay' && (
+              <DailyChallengeScreen difficulty={dailyDifficulty} dailyStatsApi={dailyStatsApi} onBack={goDailyHub} />
+            )}
+            {screen === 'stats' && (
+              <StatsScreen stats={statsApi.stats} dailyStats={dailyStatsApi.dailyStats} onBack={goMenu} />
+            )}
+            {screen === 'achievements' && (
+              <AchievementsScreen stats={statsApi.stats} dailyStats={dailyStatsApi.dailyStats} onBack={goMenu} />
+            )}
+            {screen === 'settings' && (
+              <SettingsScreen
+                darkMode={settings.darkMode}
+                setDarkMode={settings.setDarkMode}
+                sound={settings.sound}
+                setSound={settings.setSound}
+                onBack={goMenu}
+              />
+            )}
+          </View>
+          {TRAY_SCREENS.has(screen) && (
+            <Tray
+              theme={theme}
+              active={screen}
+              onHome={goMenu}
+              onStats={goStats}
+              onAchievements={goAchievements}
+              onSettings={goSettings}
+            />
+          )}
+        </View>
       </ThemeProvider>
     </SafeAreaProvider>
   );
