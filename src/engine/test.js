@@ -135,6 +135,44 @@ console.log('\nlifecycle:');
   ok('retry restores lives', rt.lives === E.MAX_LIVES);
 }
 
+// --- lives scale with grid size ----------------------------------------------
+console.log('\nlives scale with grid size:');
+{
+  ok('livesForGrid 3x3', E.livesForGrid(3) === 3);
+  ok('livesForGrid 4x4', E.livesForGrid(4) === 5);
+  ok('livesForGrid 5x5', E.livesForGrid(5) === 7);
+  ok('livesForGrid 6x6', E.livesForGrid(6) === 10);
+  ok('newGame lives match grid size', E.newGame(1).lives === E.livesForGrid(3));
+  ok('newDailyGame lives match grid size', E.newDailyGame('2026-08-07', 'expert').lives === E.livesForGrid(5));
+}
+
+// --- rewarded continue: reviving a lost board -------------------------------
+console.log('\nrevive (rewarded continue):');
+{
+  ok('continueLivesForGrid 3x3', E.continueLivesForGrid(3) === 2);
+  ok('continueLivesForGrid 4x4', E.continueLivesForGrid(4) === 3);
+  ok('continueLivesForGrid 5x5', E.continueLivesForGrid(5) === 4);
+  ok('continueLivesForGrid 6x6', E.continueLivesForGrid(6) === 5);
+
+  // a chain that outruns 1 life: tap 0 bursts cells 1 and 2 (2 bursts > 1 life)
+  const n = 3, ratio = 0.9, caps = [10, 3, 3, 10, 10, 10, 10, 10, 10];
+  const cells = [10, 3, 3, 4, 4, 4, 4, 4, 4];
+  const lost = E.tap({ n, ratio, cells, caps, level: 1, lives: 1, taps: 0, status: 'play' }, 0);
+  ok('setup: board is lost', lost.result === 'lost' && lost.state.status === 'lost');
+
+  const r = E.revive(lost.state, 2);
+  ok('revive puts the board back in play', r.result === null && r.state.status === 'play');
+  ok('revive sets the requested lives', r.state.lives === 2);
+  ok('revive keeps the board as it was', r.state.cells.join(',') === lost.state.cells.join(','));
+  ok('revived board has a legal tap', E.legalTaps(r.state).length > 0);
+  ok('input state unmutated by revive', lost.state.status === 'lost' && lost.state.lives === 0);
+
+  // a lost board that resolved to all-green is simply a win once revived
+  const allGreen = { n: 2, ratio: 0.9, cells: [1, 2, 0, 1], caps: [10, 10, 10, 10], level: 1, lives: 0, taps: 3, status: 'lost' };
+  const w = E.revive(allGreen, 2);
+  ok('reviving an already-cleared board wins', w.result === 'won' && w.state.status === 'won');
+}
+
 // --- daily challenge: deterministic, same board for the same (date, difficulty)
 console.log('\ndaily challenge determinism:');
 {

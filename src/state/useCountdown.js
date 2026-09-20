@@ -16,6 +16,7 @@ const TICK_MS = 100;
 export function useCountdown(limitMs, { active, onExpire }) {
   const [remainingMs, setRemainingMs] = useState(limitMs);
   const remainingRef = useRef(limitMs);
+  const limitRef = useRef(limitMs);   // grows when addTime() grants bonus time
   const expiredRef = useRef(false);
 
   useEffect(() => {
@@ -36,9 +37,25 @@ export function useCountdown(limitMs, { active, onExpire }) {
 
   const reset = useCallback((newLimitMs = limitMs) => {
     expiredRef.current = false;
+    limitRef.current = newLimitMs;
     remainingRef.current = newLimitMs;
     setRemainingMs(newLimitMs);
   }, [limitMs]);
 
-  return { remainingMs, reset };
+  // Bonus time (e.g. a rewarded "+30s"), also re-arming a countdown that has
+  // already expired. Call while `active` is false — the next active window
+  // anchors from the updated remaining time.
+  const addTime = useCallback((ms) => {
+    expiredRef.current = false;
+    limitRef.current += ms;
+    remainingRef.current += ms;
+    setRemainingMs(remainingRef.current);
+  }, []);
+
+  // Time actually spent so far — limit minus remaining, where the limit
+  // includes any bonus time, so a run finished after an extension isn't
+  // reported as faster than it really was.
+  const elapsedMs = limitRef.current - remainingMs;
+
+  return { remainingMs, elapsedMs, reset, addTime };
 }

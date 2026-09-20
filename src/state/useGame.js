@@ -66,6 +66,11 @@ export function useGame(statsApi, opts = {}) {
     onLost = () => statsApi?.boardLost(),
     onBoardStarted = () => statsApi?.boardStarted(),
     onTapped = (info) => statsApi?.tapped(info),
+    // When true, a loss isn't reported (onLost) the instant it happens — it's
+    // held until the player commits to it (retry / start another board /
+    // leave), so a rewarded "continue" (reviveAfterLoss) can undo it without
+    // stats ever seeing a loss AND a win for the same board attempt.
+    offerContinue = false,
   } = opts;
 
   const [state, setState] = useState(() => (initialState ? initialState() : Engine.newGame(1)));
@@ -77,6 +82,33 @@ export function useGame(statsApi, opts = {}) {
   const [status, setStatus] = useState('play');          // 'play' | 'won' | 'lost'
   const [boardId, setBoardId] = useState(0);              // bumps whenever a NEW board is generated
   const timers = useRef([]);
+
+  // --- rewarded continue bookkeeping -----------------------------------------
+  // One continue per board attempt. pendingLossRef holds a loss that has
+  // happened on screen but not yet been reported via onLost.
+  const [continueUsed, setContinueUsed] = useState(false);
+  const continueUsedRef = useRef(false);
+  const pendingLossRef = useRef(false);
+  const onLostRef = useRef(onLost);
+  onLostRef.current = onLost;
+
+  const commitLoss = useCallback(() => {
+    if (!pendingLossRef.current) return;
+    pendingLossRef.current = false;
+    onLostRef.current();
+  }, []);
+
+  // Every new board attempt starts here: report any still-pending loss for the
+  // board being left, and make the next attempt's single continue available.
+  const beginBoard = useCallback(() => {
+    commitLoss();
+    continueUsedRef.current = false;
+    setContinueUsed(false);
+  }, [commitLoss]);
+
+  // Leaving the screen with a loss still pending (e.g. the daily challenge's
+  // Menu button) counts as accepting it.
+  useEffect(() => () => commitLoss(), [commitLoss]);
 
   // --- persistence ------------------------------------------------------
   // Ladder mode resumes a saved level from AsyncStorage on mount. A mode that
@@ -130,8 +162,9 @@ export function useGame(statsApi, opts = {}) {
   const settleLoss = useCallback(() => {
     setStatus('lost');
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => {});
-    onLost();
-  }, [onLost]);
+    if (offerContinue && !continueUsedRef.current) pendingLossRef.current = true;
+    else onLost();
+  }, [onLost, offerContinue]);
 
   // A cleared board wipes in a diagonal wave (band = row + col) rather than
   // popping straight to empty. `cells` is the pre-sweep board (still holding
@@ -236,12 +269,13 @@ export function useGame(statsApi, opts = {}) {
   // --- controls -------------------------------------------------------------
   const retry = useCallback(() => {
     clearTimers();
+    beginBoard();
     const g = (regenerate || Engine.retry)(state);
     setState(g); setDisplay(g.cells); setBursting([]); setWiping([]); setStatus('play'); setBusy(false);
     setBoardId((id) => id + 1);
     onBoardStarted();
     runBoardReveal(g.n);
-  }, [state, regenerate, onBoardStarted, runBoardReveal]);
+  }, [state, regenerate, onBoardStarted, runBoardReveal, beginBoard]);
 
   // External forced loss (e.g. a daily-challenge countdown hitting zero) —
   // mirrors the cascade-lost path in tap() above. Guarded so it's a no-op if
@@ -257,29 +291,69 @@ export function useGame(statsApi, opts = {}) {
 
   const restart = useCallback(() => {
     clearTimers();
+    beginBoard();
     const g = Engine.newGame(1);
     setState(g); setDisplay(g.cells); setBursting([]); setWiping([]); setStatus('play'); setBusy(false);
     setBoardId((id) => id + 1);
     statsApi.boardStarted();
     persist(1);
     runBoardReveal(g.n);
-  }, [persist, statsApi, runBoardReveal]);
+  }, [persist, statsApi, runBoardReveal, beginBoard]);
 
   // Advance from a cleared board to the next level (called from the "Continue"
   // prompt, not automatic — Leon wants a deliberate step, not an auto-advance).
   const continueNext = useCallback(() => {
     clearTimers();
+    beginBoard();
     const ng = Engine.nextLevel(state);
     setState(ng); setDisplay(ng.cells); setBursting([]); setWiping([]); setStatus('play'); setBusy(false);
     setBoardId((id) => id + 1);
     statsApi.boardStarted();
     persist(ng.level);
     runBoardReveal(ng.n);
-  }, [state, persist, statsApi, runBoardReveal]);
+  }, [state, persist, statsApi, runBoardReveal, beginBoard]);
+
+  // Dev-only: jump straight to an arbitrary level, to test a specific
+  // difficulty band without grinding there. Ladder-only, mirrors restart/
+  // continueNext (persists the jumped-to level, so it survives a reload).
+  const goToLevel = useCallback((level) => {
+    clearTimers();
+    beginBoard();
+    const g = Engine.newGame(level);
+    setState(g); setDisplay(g.cells); setBursting([]); setWiping([]); setStatus('play'); setBusy(false);
+    setBoardId((id) => id + 1);
+    statsApi.boardStarted();
+    persist(level);
+    runBoardReveal(g.n);
+  }, [persist, statsApi, runBoardReveal, beginBoard]);
+
+  // Rewarded continue: undo a loss and put the same board back in play (the
+  // caller has already had the reward earned). A loss by lives restores
+  // continueLivesForGrid(n) lives; a forced timeout (lives still > 0) keeps
+  // the lives it had. The loss is dropped from the pending report, so stats
+  // never see it. Once per board attempt.
+  const reviveAfterLoss = useCallback(() => {
+    if (status !== 'lost' || continueUsedRef.current) return;
+    pendingLossRef.current = false;
+    continueUsedRef.current = true;
+    setContinueUsed(true);
+    const lives = state.lives > 0 ? state.lives : Engine.continueLivesForGrid(state.n);
+    const r = Engine.revive(state, lives);
+    setState(r.state);
+    setStatus('play');
+    if (r.result === 'won') {
+      // the lost board had already resolved to all-green — reviving it is a win
+      setBusy(true);
+      runWinWipe(display, r.state);
+    }
+  }, [status, state, display, runWinWipe]);
+
+  const canContinue = offerContinue && status === 'lost' && !continueUsed;
 
   return {
     state, display, bursting, wiping, revealing, busy, status, boardId,
-    tap, retry, restart, continueNext, forceTimeout,
+    tap, retry, restart, continueNext, forceTimeout, goToLevel,
+    canContinue, reviveAfterLoss,
     // rendering hints
     isGreen: (v) => Engine.isGreen(v, state.ratio),
   };

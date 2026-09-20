@@ -16,14 +16,14 @@
     ],
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.yourname.overflow"
+      "bundleIdentifier": "com.leonemanuel.overflow"
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#F4F1E8"
       },
-      "package": "com.yourname.overflow",
+      "package": "com.leonemanuel.overflow",
       "backgroundColor": "#1B1A17",
       "allowBackup": false
     },
@@ -37,7 +37,15 @@
     },
     "plugins": [
       "expo-font",
-      "expo-system-ui"
+      "expo-system-ui",
+      [
+        "react-native-google-mobile-ads",
+        {
+          "androidAppId": "ca-app-pub-3940256099942544~3347511713",
+          "iosAppId": "ca-app-pub-3940256099942544~1458002511",
+          "userTrackingUsageDescription": "This identifier is used to deliver more relevant ads to you."
+        }
+      ]
     ]
   }
 }

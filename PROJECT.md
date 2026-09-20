@@ -21,8 +21,12 @@ evenly across its 4 orthogonal neighbours (remainder discarded; shares that fall
 off-grid are lost — this is the ONLY way total value drains, which guarantees the
 board terminates). A cell BURSTS if it exceeds its cap. Bursting cascades: a
 burst cell distributes its value, which can push neighbours over their caps,
-chaining outward. **Each bursting cell costs one life; 3 lives per board.** Chains
-resolve deterministically and can outrun your lives, losing the board.
+chaining outward. **Each bursting cell costs one life.** Lives scale with grid
+size (`livesForGrid()` in the engine) — 3 at 3×3, 5 at 4×4, 7 at 5×5, 10 at
+6×6 (daily-only) — since a bigger board has more cells that can chain into one
+cascade, and more lives lets that be genuine bad luck rather than pure
+life-count attrition on top of the tighter caps. Chains resolve
+deterministically and can outrun your lives, losing the board.
 
 **Green cells.** A cell whose tap would push nothing (`floor(value*ratio/4) === 0`)
 is "green" — safe filler. Greens are LOCKED (can't be tapped) until every
@@ -64,16 +68,108 @@ again" at the same level.
   rejected. The chosen identity: **varied low caps, no colour, full boards, read
   the board yourself.**
 
-- **Tuning target (Leon's explicit choice): HARD.** Careless play should fail at
-  every level; even careful greedy play should be challenged; a genuine planner
-  does best. Careless ~40%→~8% across the curve; careful-greedy ~85%→~64%; a
-  planning player beats greedy (so late losses reward planning, aren't just
-  unfair).
+- **Tuning target (revised, Leon's explicit ask): gentle onboarding, quick
+  ramp, long hard tail, never truly impossible.** Level 1 should be easy;
+  within the first ~10-20 levels it should clearly require thought (not
+  boring); difficulty should then keep climbing — gradually, not in cliffs —
+  for hundreds/thousands of levels, reaching a genuinely very hard (but not
+  literally unbeatable) plateau late, since most players won't get anywhere
+  near there. This supersedes an earlier "HARD everywhere, careless ~40%→8%"
+  framing that predated fully-packed boards and the level-curve rework below.
 
-- **Level curve.** Fully packed at every level. Grid grows 3×3 (L1–3) → 4×4
-  (L4–9) → 5×5 (L10+). **Capped at 5×5** — 6×6 makes even careful play lose
-  unfairly. Only the cap range widens with level; danger stays constant, only the
-  reading load scales. See `levelParams()` in the engine.
+- **Level curve (reworked after simulation — see `scripts/simulate-difficulty.js`).**
+  Fully packed at every level. Key findings that drove the current shape:
+  - **Grid size is a CLIFF, not a ramp, past 4×4.** Measured directly: holding
+    caps at their loosest possible value and varying ONLY grid size, a
+    careful (one-ply-lookahead) bot's win rate goes 3×3=75% → 4×4=35% →
+    5×5=0% → 6×6=0%, regardless of caps. This reproduces (and vindicates) an
+    older, since-overridden finding that 5×5+ "makes even careful play lose
+    unfairly" — an earlier session had let grid size grow unboundedly with
+    level to feed a long difficulty tail, without re-testing against this.
+    That also broke technically: generation cost climbs fast with n (~1s at
+    10×10; 12×12+ can exhaust its attempt budget and silently fall back to
+    an **unverified** board), and ladder mode generates synchronously with no
+    loading UI on every level-up. Consequence: grid size can never be a
+    smooth long ramp — it's 3×3, 4×4, and periodic 5×5 "wall" spikes, full
+    stop, not a continuum extending to 6×6+.
+  - **`capMax` widening ALONE makes the game easier for a burst-avoidance
+    bot** (more generously-capped cells dilute the danger) — `capMin`
+    tightening, not the cap range's width, is what drives a bot's win rate
+    down. BUT Leon explicitly wants `capMax` to keep climbing anyway, well
+    past its old ceiling (42 → 60, saturating around level ~8000 instead of
+    ~2000) — bigger numbers make the *mental arithmetic* harder in a way the
+    win-rate bots can't measure (they don't "do maths," they just react to
+    burst/no-burst). So `capMax`'s climb is now an intentional felt-
+    progression signal in its own right, not just a background variety knob
+    — `capMin` is left to do the actual burst-avoidance difficulty work.
+  - **Generation-safety is about `capMin`'s FLOOR value, not just its
+    pairing with `capMax`.** A cell whose cap is ≤4 is ALWAYS green at
+    ratio=0.88 (see `isGreen`), so it's forced into the single-permitted
+    "full cell" slot — with `capMin` floored at 4, enough cells draw a tiny
+    cap that multiple forced-full collisions become likely unless `capMax`
+    is wide enough to compensate (measured: needs ≥14 at 4×4, ≥18 at 5×5,
+    since more cells means more collision risk). Raising the floor to
+    **5** instead removes the problem at the source — v=5 isn't always
+    green, so it needs far less margin (≥10 at 4×4, ≥12 at 5×5) — small
+    enough that a slowly-climbing `capMax` clears it on its own, with no
+    special-casing needed. (This was found the hard way: an earlier attempt
+    kept the floor at 4 and patched around it with a hard safety-floor jump
+    exactly when `capMin` bottomed out — technically safe, but a visible,
+    unintended easing bump at that level. Raising the floor was the cleaner
+    fix.) A dynamic, pace-independent safety floor (`CAP_MAX_SAFE_FLOOR_4X4`
+    / `_5X5` in `levelParams()`) still exists as a defensive backstop against
+    future retuning, but shouldn't need to fire in normal operation.
+
+  **Milestones are Leon's explicit, round-number choices** (not simulation-
+  derived): 3×3 for **L1–100**, 4×4 for **L101–500**, then a 5×5 "hard wall"
+  level every **5** levels from L505 on — a real, frequent recurring gauntlet
+  (roughly 1 in 5 levels past L500), not the old rare "every 25 levels"
+  spike. (3×3's span was raised from an original 50 to 100 after
+  playtesting — Leon wanted more time on 3×3 while the numbers climb before
+  handing off to 4×4.) `capMin` tightens continuously (sqrt shape, front-
+  loaded) from level 1 through both the 3×3 and 4×4 bands, reaching its
+  floor (5) around L282; `capMax` grows continuously too (linear,
+  deliberately much slower) from level 1 all the way out to ~L8000. See
+  `levelParams()` / `gridSizeForLevel()` in the engine for the exact
+  formulas and the fuller reasoning in their comments.
+
+  **L1–100 (3×3) runs its OWN separate, steeper ramp** (`tier1Params()`),
+  not the whole-game curve above — the whole-game curve only moves `capMax`
+  9→10 across 100 levels, imperceptible. `capMin` still tightens sqrt-shape
+  (7→5, floor by ~L58); `capMax` grows LINEARLY to a much higher endpoint
+  (9→20 — a steady climb of roughly 9, 12, 14, 17, 20 at L1/25/50/75/100,
+  per Leon's explicit "consistent number increase" ask). This tier-1 curve
+  is NOT continuous with the whole-game curve at the L100→101 seam (`capMax`
+  steps back down, 20→10, right as the grid steps up to 4×4) — deliberately
+  left as-is per Leon's choice, since every level is a brand-new board
+  anyway and the grid-size cliff already dominates the difficulty jump
+  there. Note: a back-loaded (t²) version of this curve was tried first
+  specifically to avoid the tradeoff below (measured: linear swamps
+  `capMin`'s narrow floor-limited tightening room, making the tutorial phase
+  measurably *easier* as level rises — careless 40%→65%, greedy 80%→~95-100%
+  by L100) — Leon explicitly chose linear/consistent growth over that
+  win-rate flatness anyway, so the easing is back and accepted, same
+  category as the 4×4-band tradeoff below.
+
+  **Data-informed, still expect retuning from real playtesting** —
+  `scripts/simulate-difficulty.js` (careless-bot + one-ply-greedy-bot win
+  rate by level, plus generation-fallback-rate tracking) shows: the 3×3
+  band's bot win rate leans upward toward L100 (greedy climbs into the
+  90s-100% by L60-100) — the accepted tradeoff above; a sharp, expected
+  cliff at the L100→101 handoff; real variation through 4×4
+  (greedy roughly 3-60% depending on level, with a mild overall lean toward
+  *easier* by L500, since `capMax`'s total range still slightly outweighs
+  `capMin`'s narrower 7→5 range — flagged to Leon, accepted as a reasonable
+  tradeoff against `capMax`'s arithmetic-difficulty role); the 5×5 walls
+  landing at 0-15% greedy (a genuinely brutal, frequent gauntlet, as
+  intended); and **zero generation fallbacks observed across the full
+  L1-3000 range** in the latest run. Caveat: the greedy bot is a
+  deliberately simple 1-ply proxy for burst-avoidance only — a real human
+  doing genuine short-lookahead planning likely does meaningfully better at
+  4×4+ than this bot, and the bot can't measure arithmetic load at all, so
+  its win rates are a pessimistic floor on ONE dimension of difficulty, not
+  a literal prediction of the full felt experience. Still needs real
+  playtesting to confirm the *feel* matches the numbers.
 
 - **At most one full (at-cap) cell to start, and it must be SAFE to tap.** A full
   cell is the obvious "tap first" focal point; more than one, or one that bursts a
@@ -88,6 +184,27 @@ again" at the same level.
 - **Cascade animation steps through per-burst frames** so the chain visibly
   travels from the tapped cell outward — the logic was always correct, but
   revealing the whole overflowed board at once made distant bursts look like bugs.
+
+- **Monetization: AdMob (`src/ads/`), test IDs until the account exists.**
+  Banner on the Menu only (never near tappable cells). Interstitial that plays
+  automatically the moment every 10th level is cleared (Menu/Continue stay
+  disabled until it closes, so it can't be dodged; never mid-board, never on
+  the Daily; if none is preloaded it's simply skipped — gameplay never waits
+  on an ad). **Rewarded "continue" after a
+  loss**, once per board attempt: ladder/daily-by-lives restores
+  `continueLivesForGrid(n)` lives (half the normal count, rounded up) on the
+  same board; a Daily *timeout* instead grants +50% of that mode's time limit.
+  Because a continue can undo a loss, `useGame({ offerContinue })` **defers
+  reporting the loss** (stats/daily results) until the player commits
+  (retry, new board, leaving the screen) — otherwise a saved board would
+  record a loss AND a win. `useCountdown.elapsedMs` includes bonus time so a
+  run finished after an extension isn't recorded as faster than it was. In
+  `__DEV__` without the native module (web/Expo Go) the rewarded stub grants
+  instantly so the flow is testable. Consent (UMP) runs before ads init;
+  Settings shows "Ad privacy" only where the form was required. Privacy policy
+  draft: `docs/privacy-policy.md` (placeholders to fill). **Before publishing:**
+  real AdMob app + unit IDs (`app.json` plugin + `REAL_UNIT_IDS` in
+  `src/ads/index.js`).
 
 ### Open questions (not yet decided)
 - Unlimited same-level retries may make losing feel stakeless vs Arrows' fail
@@ -105,7 +222,7 @@ framework-independent game logic: generation, exact solver, cascade resolution,
 full-board packing, the level curve, and the new/next/retry lifecycle. State is a
 plain serialisable object `{ n, ratio, cells[], caps[], level, lives, taps,
 status }`. Every operation returns a fresh state (no mutation). `src/engine/test.js`
-has 36 passing tests (`npm test`).
+has 86 passing tests (`npm test`).
 
 **The Expo app scaffold is done** (this is an Expo / React Native project, one
 codebase for iOS + Android):

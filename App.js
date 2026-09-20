@@ -20,6 +20,7 @@ import { useGame } from './src/state/useGame';
 import { useSettings } from './src/state/useSettings';
 import { useStats } from './src/state/useStats';
 import { useDailyStats } from './src/state/useDailyStats';
+import { isRewardedAvailable } from './src/ads';
 import { ThemeProvider, darkTheme, lightTheme } from './src/theme';
 
 // Screens that show the bottom tab bar. Tray itself is rendered exactly
@@ -44,7 +45,7 @@ export default function App() {
   const settings = useSettings();
   const statsApi = useStats();
   const dailyStatsApi = useDailyStats();
-  const g = useGame(statsApi);
+  const g = useGame(statsApi, { offerContinue: isRewardedAvailable() });
   const [fontsLoaded] = useFonts({
     Quicksand_500Medium,
     Quicksand_600SemiBold,
@@ -67,6 +68,10 @@ export default function App() {
     statsApi.reset();
     dailyStatsApi.reset();
   };
+
+  // Dev-only: jump straight to a level from Settings, to test a specific
+  // difficulty band without grinding there.
+  const onDevJumpToLevel = (level) => { g.goToLevel(level); setScreen('game'); };
 
   // App itself renders ThemeProvider, so it can't call useTheme() (that only
   // works in a descendant) — derive the same paper colour directly for the
@@ -109,6 +114,7 @@ export default function App() {
                 setDarkMode={settings.setDarkMode}
                 sound={settings.sound}
                 setSound={settings.setSound}
+                onDevJumpToLevel={onDevJumpToLevel}
                 onBack={goMenu}
               />
             </View>

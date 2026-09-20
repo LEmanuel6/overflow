@@ -7,6 +7,7 @@ import ConfirmDialog from '../components/ConfirmDialog';
 import { ACHIEVEMENTS, ACHIEVEMENTS_BY_ID } from '../data/achievements';
 import { localDateStr, totalAttemptsForDay, completedCountForDay } from '../state/useDailyStats';
 import { DAILY_DIFFICULTY_ORDER } from '../engine';
+import { AdBanner } from '../ads';
 
 const RECENT_LIMIT = 3;
 
@@ -89,6 +90,8 @@ export default function MenuScreen({ level, stats, onPlay, onReset, onAchievemen
         </Pressable>
       </View>
 
+      <AdBanner />
+
       <ConfirmDialog
         theme={theme}
         visible={confirmingReset}
@@ -115,15 +118,19 @@ function makeStyles(theme) {
     },
     recentEmptyRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
     recentEmpty: { fontFamily: theme.font.regular, fontSize: 14, color: theme.color.inkSoft, opacity: 0.75, flexShrink: 1 },
-    recentRow: { flexDirection: 'row', justifyContent: 'center', gap: 14 },
-    badgeSlot: { alignItems: 'center', width: 92 },
+    recentRow: { flexDirection: 'row', justifyContent: 'center', gap: 8 },
+    // width is wide enough for the longest single word seen in an achievement
+    // title so far (e.g. "Comfortable", "Grandmaster", "Intermediate") to sit
+    // on one line at badgeTitle's font size — a too-narrow slot has no space
+    // left to wrap at, so RN falls back to a mid-word break instead.
+    badgeSlot: { alignItems: 'center', width: 100 },
     badge: {
       width: 52, height: 52, borderRadius: 26, alignItems: 'center', justifyContent: 'center',
       backgroundColor: theme.color.vessel, borderWidth: 1, borderColor: theme.color.vesselEdge,
     },
     badgeUnlocked: { backgroundColor: theme.color.okSoft, borderColor: theme.color.ok },
     badgeTitle: {
-      fontFamily: theme.font.regular, fontSize: 14, color: theme.color.inkSoft, marginTop: 6, textAlign: 'center',
+      fontFamily: theme.font.regular, fontSize: 12, color: theme.color.inkSoft, marginTop: 6, textAlign: 'center',
     },
     dailyCard: {
       flexDirection: 'row', alignItems: 'center', gap: 12,
