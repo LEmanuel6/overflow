@@ -7,7 +7,6 @@ import ConfirmDialog from '../components/ConfirmDialog';
 import { ACHIEVEMENTS, ACHIEVEMENTS_BY_ID } from '../data/achievements';
 import { localDateStr, totalAttemptsForDay, completedCountForDay } from '../state/useDailyStats';
 import { DAILY_DIFFICULTY_ORDER } from '../engine';
-import { AdBanner } from '../ads';
 
 const RECENT_LIMIT = 3;
 
@@ -89,8 +88,6 @@ export default function MenuScreen({ level, stats, onPlay, onReset, onAchievemen
           <Text style={styles.resetButtonText}>Reset</Text>
         </Pressable>
       </View>
-
-      <AdBanner />
 
       <ConfirmDialog
         theme={theme}

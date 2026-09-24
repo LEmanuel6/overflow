@@ -1,9 +1,14 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { View, Text, Pressable, StyleSheet, TextInput } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../theme';
 import Switch from '../components/Switch';
 import { initAds, isPrivacyOptionsRequired, showPrivacyOptions } from '../ads';
+import {
+  isPurchaseAvailable, isPurchaseStub, useAdsRemoved, getRemoveAdsPrice,
+  buyRemoveAds, restorePurchases, devClearPurchase,
+} from '../purchases';
 
 // Tray is rendered once, persistently, by App.js — not here (see Tray.jsx).
 export default function SettingsScreen({ darkMode, setDarkMode, sound, setSound, onDevJumpToLevel, onBack }) {
@@ -38,15 +43,77 @@ export default function SettingsScreen({ darkMode, setDarkMode, sound, setSound,
               </Pressable>
             </Row>
           )}
+          <PurchaseRows styles={styles} theme={theme} />
         </View>
 
         {__DEV__ && <DevLevelJump styles={styles} theme={theme} onJump={onDevJumpToLevel} />}
+        {__DEV__ && isPurchaseStub && (
+          <Pressable onPress={devClearPurchase} style={styles.devClear}>
+            <Text style={styles.devLabel}>Dev: clear "Remove ads" test purchase</Text>
+          </Pressable>
+        )}
 
         <Pressable style={styles.button} onPress={onBack}>
           <Text style={styles.buttonText}>Back</Text>
         </Pressable>
       </View>
     </SafeAreaView>
+  );
+}
+
+// One-time "Remove ads" purchase (banner + level-clear ads; the optional
+// watch-to-continue ads stay) plus the Restore purchases row Apple requires.
+// Renders nothing where purchases aren't configured/available.
+function PurchaseRows({ styles, theme }) {
+  const removed = useAdsRemoved();
+  const [price, setPrice] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [buyNotice, setBuyNotice] = useState(null);
+  const [restoreNotice, setRestoreNotice] = useState(null);
+
+  useEffect(() => {
+    let alive = true;
+    getRemoveAdsPrice().then((p) => { if (alive) setPrice(p); });
+    return () => { alive = false; };
+  }, []);
+
+  if (!isPurchaseAvailable()) return null;
+
+  const buy = async () => {
+    setBusy(true); setBuyNotice(null); setRestoreNotice(null);
+    const r = await buyRemoveAds();
+    setBusy(false);
+    if (r === 'error') setBuyNotice("Couldn't complete the purchase — try again");
+  };
+  const restore = async () => {
+    setBusy(true); setBuyNotice(null); setRestoreNotice(null);
+    const r = await restorePurchases();
+    setBusy(false);
+    setRestoreNotice(r === 'none' ? 'No earlier purchase found' : r === 'error' ? "Couldn't restore — try again" : null);
+  };
+
+  return (
+    <>
+      <Row
+        theme={theme} styles={styles} label="Remove ads"
+        note={removed ? 'Purchased — thank you!' : (buyNotice || 'One-time purchase')}
+      >
+        {removed ? (
+          <Ionicons name="checkmark-circle" size={24} color={theme.color.ok} />
+        ) : (
+          <Pressable style={[styles.buyButton, busy && styles.buyButtonBusy]} onPress={buy} disabled={busy}>
+            <Text style={styles.buyButtonText}>{price || 'Buy'}</Text>
+          </Pressable>
+        )}
+      </Row>
+      {!removed && (
+        <Row theme={theme} styles={styles} label="Restore purchases" note={restoreNotice || undefined}>
+          <Pressable onPress={restore} disabled={busy} hitSlop={8}>
+            <Text style={styles.rowAction}>Restore</Text>
+          </Pressable>
+        </Row>
+      )}
+    </>
   );
 }
 
@@ -116,6 +183,13 @@ function makeStyles(theme) {
     rowLabel: { fontFamily: theme.font.bold, fontSize: 15, color: theme.color.ink },
     rowNote: { fontFamily: theme.font.regular, fontSize: 14, color: theme.color.inkSoft, marginTop: 2, opacity: 0.75 },
     rowAction: { fontFamily: theme.font.bold, fontSize: 15, color: theme.color.ink, textDecorationLine: 'underline' },
+    buyButton: {
+      backgroundColor: theme.color.ink, borderRadius: theme.radius,
+      paddingVertical: 8, paddingHorizontal: 18, minWidth: 72, alignItems: 'center',
+    },
+    buyButtonBusy: { opacity: 0.5 },
+    buyButtonText: { fontFamily: theme.font.bold, fontSize: 15, color: theme.color.paper, letterSpacing: 0.5 },
+    devClear: { marginTop: 16 },
     devSection: { width: '100%', maxWidth: 360, marginTop: 24 },
     devLabel: {
       fontFamily: theme.font.regular, fontSize: 13, color: theme.color.inkSoft,

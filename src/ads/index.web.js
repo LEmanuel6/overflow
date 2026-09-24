@@ -6,10 +6,6 @@ export function initAds() {
   return Promise.resolve(false);
 }
 
-export function AdBanner() {
-  return null;
-}
-
 export function isPrivacyOptionsRequired() {
   return false;
 }

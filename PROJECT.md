@@ -185,12 +185,19 @@ again" at the same level.
   travels from the tapped cell outward — the logic was always correct, but
   revealing the whole overflowed board at once made distant bursts look like bugs.
 
-- **Monetization: AdMob (`src/ads/`), test IDs until the account exists.**
-  Banner on the Menu only (never near tappable cells). Interstitial that plays
-  automatically the moment every 10th level is cleared (Menu/Continue stay
-  disabled until it closes, so it can't be dodged; never mid-board, never on
-  the Daily; if none is preloaded it's simply skipped — gameplay never waits
-  on an ad). **Rewarded "continue" after a
+- **A bursting cell's number is coloured `burst` (`numBurst` in `Cell.jsx`).**
+  Full/green cells already colour their number to match the state (`numFull`
+  = signal, `numGreen` = ok); burst previously fell through to the plain
+  `ink` colour with no override. Added for consistency across all three
+  highlighted states — surfaced while building the app icon (`assets/`),
+  which mirrors each cell state's real fill/border/number triple.
+
+- **Monetization: AdMob (`src/ads/`). No banner ad — Leon decided against
+  one, so the module only ever shows full-screen ads.** Interstitial that
+  plays automatically the moment every 10th level is cleared (Menu/Continue
+  stay disabled until it closes, so it can't be dodged; never mid-board,
+  never on the Daily; if none is preloaded it's simply skipped — gameplay
+  never waits on an ad). **Rewarded "continue" after a
   loss**, once per board attempt: ladder/daily-by-lives restores
   `continueLivesForGrid(n)` lives (half the normal count, rounded up) on the
   same board; a Daily *timeout* instead grants +50% of that mode's time limit.
@@ -202,9 +209,28 @@ again" at the same level.
   `__DEV__` without the native module (web/Expo Go) the rewarded stub grants
   instantly so the flow is testable. Consent (UMP) runs before ads init;
   Settings shows "Ad privacy" only where the form was required. Privacy policy
-  draft: `docs/privacy-policy.md` (placeholders to fill). **Before publishing:**
-  real AdMob app + unit IDs (`app.json` plugin + `REAL_UNIT_IDS` in
-  `src/ads/index.js`).
+  draft: `docs/privacy-policy.md` (placeholders to fill). Real Android AdMob
+  app ID + both unit IDs (interstitial, rewarded) are in (`app.json` plugin +
+  `REAL_UNIT_IDS` in `src/ads/index.js`) — Android's ad wiring is done.
+  **Still needed before publishing:** both iOS IDs, once the Apple stage
+  starts.
+
+- **One-time "Remove ads" purchase (`src/purchases/`, RevenueCat).** Removes
+  the banner and the level-clear interstitials only — Leon chose to KEEP the
+  rewarded continue / extra-time ads as optional (so consent + the ads SDK
+  still run for buyers). Entitlement id `no_ads`; the last known value is
+  cached in AsyncStorage (`overflow:iap:v1`) so offline launches still know a
+  buyer, and RevenueCat overwrites it whenever reachable (handles refunds).
+  `purchasesReady` is awaited before any banner/interstitial decision so a
+  buyer never sees a flash of ads. Settings has the buy row (localised store
+  price) + Restore purchases (Apple requires it); both hidden where purchases
+  aren't configured. In `__DEV__` without keys/native module a local stub
+  "buys" instantly (Settings shows a "clear test purchase" link). **To go
+  live:** create the product in Play Console (needs a build uploaded first) /
+  App Store Connect, add it + entitlement `no_ads` to a RevenueCat offering,
+  link the Play service-account key, then paste the PUBLIC SDK keys into
+  `REVENUECAT_KEYS` in `src/purchases/index.js`. Price is set in the store
+  consoles, not in code (Apple only offers tiers, so £4.99 rather than £5.00).
 
 ### Open questions (not yet decided)
 - Unlimited same-level retries may make losing feel stakeless vs Arrows' fail

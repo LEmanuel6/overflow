@@ -28,6 +28,10 @@ This data is collected by Google, not by us. How Google uses it is described in 
 - **Consent:** where required by law (for example in the European Economic Area, the United Kingdom, and some US states), the app shows a consent form on first launch before any ads are requested. If you were shown that form, you can change your choice at any time under **Settings → Ad privacy**.
 - **Device controls:** you can reset or limit your advertising identifier in your device settings (Android: Settings → Privacy → Ads; iOS: Settings → Privacy & Security → Tracking).
 
+## In-app purchase
+
+The app offers an optional one-time purchase to remove some ads. Payment is handled entirely by Google Play or the Apple App Store — we never see or store your payment details. To confirm and restore your purchase, the app uses **RevenueCat**, which receives an anonymous app user identifier, your purchase status, and basic device information. See [RevenueCat's Privacy Policy](https://www.revenuecat.com/privacy).
+
 ## Analytics and crash reporting
 
 The app does not currently include third-party analytics or crash-reporting services beyond what is described above for advertising.

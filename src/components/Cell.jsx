@@ -196,7 +196,7 @@ function Cell({ value, cap, push, size, boardId, isGreen, isBursting, isWiping, 
           {!empty && (
             <>
               <View style={styles.row}>
-                <Text style={[styles.num, { fontSize: numSize }, atCap && styles.numFull, isGreen && styles.numGreen]}>
+                <Text style={[styles.num, { fontSize: numSize }, atCap && styles.numFull, isGreen && styles.numGreen, over && styles.numBurst]}>
                   {displayValue}
                 </Text>
                 <Text style={[styles.cap, { fontSize: capSize }]}>/{cap}</Text>
@@ -272,6 +272,7 @@ function makeStyles(theme) {
     num: { fontFamily: theme.font.bold, fontSize: 20, color: theme.color.ink },
     numFull: { color: theme.color.signal },
     numGreen: { color: theme.color.ok },
+    numBurst: { color: theme.color.burst },
     cap: { fontFamily: theme.font.bold, fontSize: 14, color: theme.color.inkSoft, marginBottom: 2, opacity: 0.75 },
     push: { fontFamily: theme.font.semiBold, color: theme.color.inkSoft, opacity: 0.65, marginTop: 1 },
     floatDelta: {

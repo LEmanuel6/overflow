@@ -1,27 +1,26 @@
 // Ads (Google AdMob) — native implementation. Web gets index.web.js (no-ops).
+// No banner: Leon decided against it, so this module only ever shows
+// full-screen ads (interstitial + rewarded) — never a persistent strip.
 //
 // react-native-google-mobile-ads needs native code that only exists in a
 // custom/EAS build — NOT in Expo Go. Requiring it there throws at import
 // time, so it's required lazily inside try/catch: in a runtime without the
 // native module the app just runs with no ads instead of crashing.
-import React, { useEffect, useState } from 'react';
-import { View, Platform, StyleSheet } from 'react-native';
+import { Platform } from 'react-native';
+import { getAdsRemoved, purchasesReady } from '../purchases';
 
 let Ads = null;
 try {
   Ads = require('react-native-google-mobile-ads');
 } catch (e) { /* no native ads module in this runtime (e.g. Expo Go) */ }
 
-// REAL ad unit IDs go here once the AdMob account exists (AdMob console ->
-// Apps -> Ad units). Until then every slot falls back to Google's TEST IDs,
-// which is safe to develop and to install preview builds with — but test ads
-// EARN NOTHING, so a store release with these still null is a silent revenue
-// bug. Fill these in before publishing (and swap the test app IDs in
-// app.json's react-native-google-mobile-ads plugin entry).
+// REAL ad unit IDs (AdMob console -> Apps -> Ad units). A slot left null
+// falls back to Google's TEST unit, which is safe for development/preview
+// builds but EARNS NOTHING — a store release with a slot still null is a
+// silent revenue bug. iOS units come later (Apple stage); Android's are in.
 const REAL_UNIT_IDS = {
-  banner: { android: null, ios: null },
-  interstitial: { android: null, ios: null },
-  rewarded: { android: null, ios: null },
+  interstitial: { android: 'ca-app-pub-4040127785814300/1052253361', ios: null },
+  rewarded: { android: 'ca-app-pub-4040127785814300/2790867130', ios: null },
 };
 
 function unitIdFor(slot, testId) {
@@ -57,7 +56,10 @@ export function initAds() {
         info.privacyOptionsRequirementStatus === AdsConsentPrivacyOptionsRequirementStatus.REQUIRED;
       if (!info.canRequestAds) return false;
       await mobileAds().initialize();
-      interstitialSlot.load(); // have the full-screen ads ready before they're needed
+      // have the full-screen ads ready before they're needed — but a buyer of
+      // Remove Ads never sees interstitials, so don't fetch one for them.
+      await purchasesReady;
+      if (!getAdsRemoved()) interstitialSlot.load();
       rewardedSlot.load();
       return true;
     } catch (e) {
@@ -152,38 +154,12 @@ export async function showRewarded() {
   return rewardedSlot.show(REWARDED_LOAD_WAIT_MS);
 }
 
-// Shows an interstitial if one is ready right now; otherwise resolves at once —
-// gameplay never waits on an ad that isn't loaded. Always resolves.
+// Shows an interstitial if one is ready right now (never for a Remove Ads
+// buyer); otherwise resolves at once — gameplay never waits on an ad that
+// isn't loaded. Always resolves.
 export async function showInterstitial() {
   if (!Ads) return;
+  await purchasesReady;
+  if (getAdsRemoved()) return; // Remove Ads covers interstitials
   await interstitialSlot.show(0);
 }
-
-// Anchored adaptive banner. Renders nothing until the SDK is ready (so a
-// player who declines consent, or a runtime without the native module, gets
-// no empty strip). Keep it well clear of tappable game cells — accidental-
-// click placement violates AdMob policy.
-export function AdBanner({ style }) {
-  const [ready, setReady] = useState(false);
-
-  useEffect(() => {
-    let alive = true;
-    initAds().then((ok) => { if (alive) setReady(ok); });
-    return () => { alive = false; };
-  }, []);
-
-  if (!Ads || !ready) return null;
-  const { BannerAd, BannerAdSize, TestIds } = Ads;
-  return (
-    <View style={[styles.wrap, style]}>
-      <BannerAd
-        unitId={unitIdFor('banner', TestIds.ADAPTIVE_BANNER)}
-        size={BannerAdSize.ANCHORED_ADAPTIVE_BANNER}
-      />
-    </View>
-  );
-}
-
-const styles = StyleSheet.create({
-  wrap: { alignItems: 'center', width: '100%' },
-});
