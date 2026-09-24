@@ -4,7 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../theme';
 import Switch from '../components/Switch';
-import { initAds, isPrivacyOptionsRequired, showPrivacyOptions } from '../ads';
+import { initAds, isPrivacyOptionsRequired, showPrivacyOptions, openAdInspector } from '../ads';
 import {
   isPurchaseAvailable, isPurchaseStub, useAdsRemoved, getRemoveAdsPrice,
   buyRemoveAds, restorePurchases, devClearPurchase,
@@ -47,6 +47,11 @@ export default function SettingsScreen({ darkMode, setDarkMode, sound, setSound,
         </View>
 
         {__DEV__ && <DevLevelJump styles={styles} theme={theme} onJump={onDevJumpToLevel} />}
+        {__DEV__ && (
+          <Pressable onPress={openAdInspector} style={styles.devClear}>
+            <Text style={styles.devLabel}>Dev: open Ad Inspector</Text>
+          </Pressable>
+        )}
         {__DEV__ && isPurchaseStub && (
           <Pressable onPress={devClearPurchase} style={styles.devClear}>
             <Text style={styles.devLabel}>Dev: clear "Remove ads" test purchase</Text>

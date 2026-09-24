@@ -163,3 +163,13 @@ export async function showInterstitial() {
   if (getAdsRemoved()) return; // Remove Ads covers interstitials
   await interstitialSlot.show(0);
 }
+
+// Dev-only: opens Google's on-device Ad Inspector — shows per-request status
+// (succeeded/failed and why), which ad unit was called, and whether this
+// device is currently recognised as a registered AdMob test device. Wired to
+// a Settings row gated by __DEV__ (see SettingsScreen). No-ops without the
+// native module.
+export async function openAdInspector() {
+  if (!Ads) return;
+  try { await Ads.default().openAdInspector(); } catch (e) { /* inspector unavailable */ }
+}

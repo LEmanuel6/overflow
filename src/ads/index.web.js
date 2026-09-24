@@ -25,3 +25,7 @@ export function showRewarded() {
 export function showInterstitial() {
   return Promise.resolve();
 }
+
+export function openAdInspector() {
+  return Promise.resolve();
+}
