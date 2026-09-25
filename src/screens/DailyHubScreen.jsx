@@ -7,6 +7,7 @@ import ScreenHeader from '../components/ScreenHeader';
 import * as Engine from '../engine';
 import { localDateStr, totalAttemptsForDay } from '../state/useDailyStats';
 import { formatTimeMs } from '../utils/format';
+import { isDailyLeaderboardAvailable, showDailyLeaderboard } from '../leaderboards';
 
 const DIFFICULTY_ICONS = {
   beginner: 'footsteps-outline',
@@ -58,6 +59,15 @@ export default function DailyHubScreen({ dailyStatsApi, onBack, onSelectDifficul
                   <Text style={styles.cardSubtitle}>{day.attempts} attempt{day.attempts === 1 ? '' : 's'} today — keep going</Text>
                 )}
               </View>
+              {isDailyLeaderboardAvailable(id) && (
+                <Pressable
+                  style={styles.leaderboardButton}
+                  onPress={(e) => { e.stopPropagation(); showDailyLeaderboard(id); }}
+                  hitSlop={8}
+                >
+                  <Ionicons name="trophy-outline" size={20} color={theme.color.inkSoft} />
+                </Pressable>
+              )}
               <Ionicons name="chevron-forward" size={18} color={theme.color.inkSoft} />
             </Pressable>
           );
@@ -90,5 +100,6 @@ function makeStyles(theme) {
       textTransform: 'uppercase', letterSpacing: 0.5, marginTop: 2,
     },
     cardSubtitle: { fontFamily: theme.font.regular, fontSize: 13, color: theme.color.inkSoft, marginTop: 4 },
+    leaderboardButton: { padding: 4 },
   });
 }

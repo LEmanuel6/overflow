@@ -215,6 +215,17 @@ again" at the same level.
   **Still needed before publishing:** both iOS IDs, once the Apple stage
   starts.
 
+  **`react-native-google-mobile-ads` is pinned to `16.5.0`, NOT latest.**
+  `17.0.0` (and `17.1.0`/`17.2.0`) fail to compile on Android with this
+  project's Expo SDK (54 / RN 0.81.5) — a genuine bug in the library's own
+  native Kotlin (`ReactNativeGoogleMobileAdsNativeModule.kt`: `getString()`
+  returns nullable but is passed to a non-null `promise.reject()` param).
+  `17.x` also requires `react-native >=0.86.0`, well past what this Expo SDK
+  ships, so it can't be installed here at all right now anyway. `16.5.0` has
+  neither problem and exposes the same API this app uses. Don't bump this
+  package without checking both things are still true for whatever version
+  Expo SDK is on by then.
+
 - **One-time "Remove ads" purchase (`src/purchases/`, RevenueCat).** Removes
   the banner and the level-clear interstitials only — Leon chose to KEEP the
   rewarded continue / extra-time ads as optional (so consent + the ads SDK
@@ -231,6 +242,46 @@ again" at the same level.
   link the Play service-account key, then paste the PUBLIC SDK keys into
   `REVENUECAT_KEYS` in `src/purchases/index.js`. Price is set in the store
   consoles, not in code (Apple only offers tiers, so £4.99 rather than £5.00).
+
+- **Leaderboards (`src/leaderboards/`, Google Play Games Services).**
+  Android-only for now — Leon explicitly chose platform-native leaderboards
+  over a custom backend (no login screen to build: Play Games' own native
+  account sheet IS the "sign in with Google"; free; no hosting). Game Center
+  (iOS) is a deliberately deferred follow-up, once there's an actual iOS
+  build — `isLeaderboardsAvailable()`/`isDailyLeaderboardAvailable()` both
+  return false on iOS/web today, so the leaderboard rows in Menu/Daily Hub/
+  Daily Challenge just don't render there, not a crash.
+  - **Ladder:** one persistent leaderboard, submitted on every win
+    (`GameScreen`) — Play Games only keeps a player's BEST score per
+    leaderboard, so no "is this a new best?" check was needed on our side.
+  - **Daily challenge:** one persistent leaderboard PER DIFFICULTY TIER
+    (times aren't comparable across tiers — different board size/caps), lower
+    ms = better, submitted on every daily win (`DailyChallengeScreen`). Play
+    Games' own leaderboard UI has a built-in Today/This Week/All Time toggle,
+    so a single persistent leaderboard doubles as "today's" board with zero
+    extra plumbing — the one known gap is that Google's "Today" boundary is
+    its own (likely UTC), not the local-midnight boundary the rest of the
+    Daily Challenge already uses (see `useDailyStats.js`'s `localDateStr`),
+    so a player right around midnight could see a mismatch. Accepted as
+    minor, non-blocking.
+  - **No custom config plugin shipped by the library** — `plugins/withPlayGames.js`
+    was written from scratch (same shape as `react-native-google-mobile-ads`'s
+    bundled plugin) to inject the Play Games `APP_ID` into
+    `AndroidManifest.xml` via a `strings.xml` indirection, since a managed
+    Expo project regenerates `android/` from scratch every build. No-ops
+    entirely while `appId` is `null` in `app.json`'s plugin entry.
+  - **Anti-cheat:** flagged to and accepted by Leon — a leaderboard fed by
+    client-reported level/time is only as honest as the client, same
+    exposure most mobile game leaderboards (including Game Center's) accept
+    without extra server-side validation.
+  - **To go live:** Play Games Services setup in Play Console (Grow users ->
+    Play Games Services) — itself blocked right now on the pending developer
+    identity verification (see the AdMob preview-build troubleshooting
+    above for that whole saga) — then create the ladder leaderboard + one
+    leaderboard per daily tier there, paste their IDs into
+    `LEVEL_LEADERBOARD_ID`/`DAILY_LEADERBOARD_IDS` in
+    `src/leaderboards/index.js`, and the real Play Games `APP_ID` into
+    `app.json`'s `withPlayGames` plugin entry.
 
 ### Open questions (not yet decided)
 - Unlimited same-level retries may make losing feel stakeless vs Arrows' fail

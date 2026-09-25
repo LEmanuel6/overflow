@@ -45,6 +45,12 @@
           "iosAppId": "ca-app-pub-3940256099942544~1458002511",
           "userTrackingUsageDescription": "This identifier is used to deliver more relevant ads to you."
         }
+      ],
+      [
+        "./plugins/withPlayGames.js",
+        {
+          "appId": null
+        }
       ]
     ]
   }

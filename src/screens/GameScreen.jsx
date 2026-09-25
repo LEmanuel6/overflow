@@ -8,6 +8,7 @@ import Hud from '../components/Hud';
 import ConfirmDialog from '../components/ConfirmDialog';
 import { livesForGrid, continueLivesForGrid } from '../engine';
 import { showRewarded, showInterstitial } from '../ads';
+import { submitLevelScore } from '../leaderboards';
 
 // An interstitial plays automatically the moment every Nth level is cleared —
 // levels are quick, so every 10th keeps ads infrequent. It can't be dodged by
@@ -33,6 +34,18 @@ export default function GameScreen({ g, stats, onMenu }) {
     adShownForBoard.current = boardId;
     setAdBusy(true);
     showInterstitial().then(() => setAdBusy(false)); // always resolves
+  }, [status, boardId, state.level]);
+
+  // Submits to the ladder leaderboard on every win — Play Games keeps only a
+  // player's best score per leaderboard, so no "is this a new best?" check
+  // is needed here. scoreSubmittedForBoard guards the same remount case as
+  // adShownForBoard above.
+  const scoreSubmittedForBoard = useRef(null);
+  useEffect(() => {
+    if (status !== 'won') return;
+    if (scoreSubmittedForBoard.current === boardId) return;
+    scoreSubmittedForBoard.current = boardId;
+    submitLevelScore(state.level);
   }, [status, boardId, state.level]);
 
   const banner =

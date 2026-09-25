@@ -7,6 +7,7 @@ import ConfirmDialog from '../components/ConfirmDialog';
 import { ACHIEVEMENTS, ACHIEVEMENTS_BY_ID } from '../data/achievements';
 import { localDateStr, totalAttemptsForDay, completedCountForDay } from '../state/useDailyStats';
 import { DAILY_DIFFICULTY_ORDER } from '../engine';
+import { isLeaderboardsAvailable, showLevelLeaderboard } from '../leaderboards';
 
 const RECENT_LIMIT = 3;
 
@@ -74,6 +75,19 @@ export default function MenuScreen({ level, stats, onPlay, onReset, onAchievemen
         </View>
         <Ionicons name="chevron-forward" size={18} color={theme.color.inkSoft} />
       </Pressable>
+
+      {isLeaderboardsAvailable() && (
+        <Pressable style={styles.dailyCard} onPress={showLevelLeaderboard}>
+          <View style={styles.dailyBadge}>
+            <Ionicons name="trophy-outline" size={22} color={theme.color.inkSoft} />
+          </View>
+          <View style={styles.dailyText}>
+            <Text style={styles.dailyTitle}>Leaderboard</Text>
+            <Text style={styles.dailySubtitle}>See how your level stacks up</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={18} color={theme.color.inkSoft} />
+        </Pressable>
+      )}
 
       <View style={styles.content}>
         <Text style={styles.title}>OVERFLOW</Text>
