@@ -193,7 +193,16 @@ again" at the same level.
   which mirrors each cell state's real fill/border/number triple.
 
 - **Monetization: AdMob (`src/ads/`). No banner ad — Leon decided against
-  one, so the module only ever shows full-screen ads.** Interstitial that
+  one, so the module only ever shows full-screen ads.** `App.js` fires
+  `initAds()` on launch (fire-and-forget) purely to give consent/init/
+  preloading a head start — removing the banner also silently removed the
+  only thing that used to trigger `initAds()` early (it used to mount with
+  the Menu screen), and `showInterstitial()` gives that FIRST-ever
+  interstitial request zero wait time for a load in progress (by design —
+  gameplay should never stall on a slow ad). Without the launch-time
+  trigger, the level-10 interstitial reliably found nothing loaded yet and
+  silently showed nothing — caught when Leon installed a build and the ads
+  seemed to just be missing. Interstitial that
   plays automatically the moment every 10th level is cleared (Menu/Continue
   stay disabled until it closes, so it can't be dodged; never mid-board,
   never on the Daily; if none is preloaded it's simply skipped — gameplay

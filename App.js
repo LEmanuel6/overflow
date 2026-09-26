@@ -20,7 +20,7 @@ import { useGame } from './src/state/useGame';
 import { useSettings } from './src/state/useSettings';
 import { useStats } from './src/state/useStats';
 import { useDailyStats, localDateStr } from './src/state/useDailyStats';
-import { isRewardedAvailable } from './src/ads';
+import { isRewardedAvailable, initAds } from './src/ads';
 import { DAILY_DIFFICULTY_ORDER, isDailyBoardCached, newDailyGame } from './src/engine';
 import { ThemeProvider, darkTheme, lightTheme } from './src/theme';
 
@@ -52,6 +52,18 @@ export default function App() {
     Quicksand_600SemiBold,
     Quicksand_700Bold,
   });
+
+  // Starts the ads SDK (consent + init + preloading the interstitial and
+  // rewarded ad) as early as possible. This used to happen implicitly via
+  // AdBanner mounting on the Menu screen; removing the banner (Leon's call)
+  // also removed that free head start, and showInterstitial() gives the
+  // FIRST-ever interstitial request zero wait time for a load in progress
+  // (by design — gameplay should never stall on a slow ad), so without an
+  // early trigger the level-10 interstitial would reliably find nothing
+  // loaded yet and silently show nothing. Firing it here instead gives
+  // consent + init + the first ad request the whole rest of the session to
+  // finish before it's actually needed.
+  useEffect(() => { initAds(); }, []);
 
   // Pre-generates today's daily-challenge boards right after launch, so by
   // the time a player actually opens the Daily Hub every tier is already
