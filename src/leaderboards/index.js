@@ -51,6 +51,23 @@ export function isDailyLeaderboardAvailable(difficulty) {
   return live && !!DAILY_LEADERBOARD_IDS[difficulty];
 }
 
+// Dev-only: true once the real IDs aren't set up yet, so the entry points
+// (Menu card, Daily Hub / Daily Challenge trophy buttons) can still render —
+// with a "(preview)" label — for Leon to judge placement/copy before Play
+// Console is unblocked. Tapping one in this state is a no-op (see
+// showLevelLeaderboard/showDailyLeaderboard below); there's nothing real to
+// open yet. Auto-stops being true the moment a real ID lands, so the label
+// disappears on its own rather than needing to be remembered and removed.
+// Works on every platform in dev (not just Android) — this previews OUR OWN
+// UI, not Play Games itself, so it's useful from the fast web dev loop too.
+export function isLeaderboardsPreview() {
+  return __DEV__ && !isLeaderboardsAvailable();
+}
+
+export function isDailyLeaderboardPreview(difficulty) {
+  return __DEV__ && !isDailyLeaderboardAvailable(difficulty);
+}
+
 let signInPromise = null;
 
 // Ensures the player is signed in before a submit/show call — Play Games'

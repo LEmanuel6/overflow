@@ -7,7 +7,7 @@ import ScreenHeader from '../components/ScreenHeader';
 import * as Engine from '../engine';
 import { localDateStr, totalAttemptsForDay } from '../state/useDailyStats';
 import { formatTimeMs } from '../utils/format';
-import { isDailyLeaderboardAvailable, showDailyLeaderboard } from '../leaderboards';
+import { isDailyLeaderboardAvailable, isDailyLeaderboardPreview, showDailyLeaderboard } from '../leaderboards';
 
 const DIFFICULTY_ICONS = {
   beginner: 'footsteps-outline',
@@ -59,7 +59,7 @@ export default function DailyHubScreen({ dailyStatsApi, onBack, onSelectDifficul
                   <Text style={styles.cardSubtitle}>{day.attempts} attempt{day.attempts === 1 ? '' : 's'} today — keep going</Text>
                 )}
               </View>
-              {isDailyLeaderboardAvailable(id) && (
+              {(isDailyLeaderboardAvailable(id) || isDailyLeaderboardPreview(id)) && (
                 <Pressable
                   style={styles.leaderboardButton}
                   onPress={(e) => { e.stopPropagation(); showDailyLeaderboard(id); }}

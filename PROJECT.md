@@ -215,16 +215,31 @@ again" at the same level.
   **Still needed before publishing:** both iOS IDs, once the Apple stage
   starts.
 
-  **`react-native-google-mobile-ads` is pinned to `16.5.0`, NOT latest.**
-  `17.0.0` (and `17.1.0`/`17.2.0`) fail to compile on Android with this
-  project's Expo SDK (54 / RN 0.81.5) — a genuine bug in the library's own
-  native Kotlin (`ReactNativeGoogleMobileAdsNativeModule.kt`: `getString()`
-  returns nullable but is passed to a non-null `promise.reject()` param).
-  `17.x` also requires `react-native >=0.86.0`, well past what this Expo SDK
-  ships, so it can't be installed here at all right now anyway. `16.5.0` has
-  neither problem and exposes the same API this app uses. Don't bump this
-  package without checking both things are still true for whatever version
-  Expo SDK is on by then.
+  **`react-native-google-mobile-ads` is pinned to `16.3.4`, NOT latest —
+  TWO separate incompatibilities ruled out everything from `16.4.0` up.**
+  - `17.0.0`+ fails to compile: a genuine bug in the library's own native
+    Kotlin (`ReactNativeGoogleMobileAdsNativeModule.kt`: `getString()`
+    returns nullable but is passed to a non-null `promise.reject()` param).
+    `17.x` also requires `react-native >=0.86.0`, well past what this Expo
+    SDK ships, so it can't even be installed here right now regardless.
+  - `16.4.0`/`16.5.0` ALSO fail to compile, for an unrelated reason: both
+    pin the native `com.google.android.gms:play-services-ads` SDK at
+    `25.4.0` (see `sdkVersions.android.googleMobileAds` in the library's own
+    `package.json` — that's what actually selects the native dependency
+    version, `android/build.gradle` just reads it), and that specific
+    Google-side release was compiled with a newer Kotlin than this project's
+    toolchain can read (`Module was compiled with an incompatible version of
+    Kotlin. The binary version of its metadata is 2.3.0, expected version is
+    2.1.0`) — nothing to do with react-native-google-mobile-ads's own code
+    this time.
+  - `16.0.0`-`16.3.4` pin the older `play-services-ads:25.0.0`, which
+    doesn't have that Kotlin-metadata problem, and none of them carry the
+    `17.x` source bug either. `16.3.4` is the newest of that safe range and
+    exposes the same API this app uses.
+  - Don't bump this package without checking BOTH things again for whatever
+    Expo SDK / Kotlin toolchain is current by then — check
+    `npm view react-native-google-mobile-ads@<version> sdkVersions.android.googleMobileAds`
+    before trying a newer release.
 
 - **One-time "Remove ads" purchase (`src/purchases/`, RevenueCat).** Removes
   the banner and the level-clear interstitials only — Leon chose to KEEP the
@@ -249,8 +264,11 @@ again" at the same level.
   account sheet IS the "sign in with Google"; free; no hosting). Game Center
   (iOS) is a deliberately deferred follow-up, once there's an actual iOS
   build — `isLeaderboardsAvailable()`/`isDailyLeaderboardAvailable()` both
-  return false on iOS/web today, so the leaderboard rows in Menu/Daily Hub/
-  Daily Challenge just don't render there, not a crash.
+  return false on iOS/web today, so the leaderboard rows in Menu/Daily Hub
+  just don't render there, not a crash. Entry points: the Menu's ladder
+  leaderboard card, and a trophy button per tier on the Daily Hub. NOT on
+  `DailyChallengeScreen` itself (Leon: nobody's checking a leaderboard
+  mid-attempt) — view the tier's board from the Hub before or after playing.
   - **Ladder:** one persistent leaderboard, submitted on every win
     (`GameScreen`) — Play Games only keeps a player's BEST score per
     leaderboard, so no "is this a new best?" check was needed on our side.

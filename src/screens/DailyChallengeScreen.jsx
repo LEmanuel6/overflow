@@ -11,7 +11,7 @@ import { useCountdown } from '../state/useCountdown';
 import { localDateStr } from '../state/useDailyStats';
 import { formatClock, formatTimeMs } from '../utils/format';
 import { isRewardedAvailable, showRewarded } from '../ads';
-import { isDailyLeaderboardAvailable, submitDailyTime, showDailyLeaderboard } from '../leaderboards';
+import { submitDailyTime } from '../leaderboards';
 import * as Engine from '../engine';
 
 // Danger zone scales with the time limit rather than a flat 15s — for
@@ -150,15 +150,6 @@ export default function DailyChallengeScreen({ difficulty, dailyStatsApi, onBack
       >
         <Ionicons name="arrow-back" size={22} color={theme.color.ink} />
       </Pressable>
-      {isDailyLeaderboardAvailable(difficulty) && (
-        <Pressable
-          style={[styles.leaderboardButton, { top: insets.top + 8 }]}
-          onPress={() => showDailyLeaderboard(difficulty)}
-          hitSlop={12}
-        >
-          <Ionicons name="trophy-outline" size={22} color={theme.color.ink} />
-        </Pressable>
-      )}
       <View style={styles.container}>
         <Text style={styles.title}>{config.label.toUpperCase()}</Text>
         <Text style={styles.subtitle}>{subtitle}</Text>
@@ -238,7 +229,6 @@ function makeStyles(theme) {
   return StyleSheet.create({
     safe: { flex: 1, backgroundColor: theme.color.paper },
     abortButton: { position: 'absolute', left: 16, padding: 6, zIndex: 1 },
-    leaderboardButton: { position: 'absolute', right: 16, padding: 6, zIndex: 1 },
     container: { flex: 1, alignItems: 'center', paddingHorizontal: 16, paddingTop: 32 },
     title: {
       fontFamily: theme.font.bold, fontSize: 26,
