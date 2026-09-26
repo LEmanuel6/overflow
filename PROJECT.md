@@ -224,6 +224,22 @@ again" at the same level.
   **Still needed before publishing:** both iOS IDs, once the Apple stage
   starts.
 
+  **`preview` builds force Google's TEST ad units, real production builds
+  don't** — `eas.json`'s `preview` profile sets
+  `EXPO_PUBLIC_FORCE_TEST_ADS=true`, read in `src/ads/index.js`'s
+  `unitIdFor()`. Found necessary the hard way: Leon tested a `preview` build
+  with real unit IDs and got "no ad available" on both interstitial and
+  rewarded — with no way to tell whether that meant a code bug or just "the
+  AdMob app has no fill yet" (real ad serving needs the AdMob app linked to
+  a live Play Store listing, which can't happen until Play Console
+  identity verification clears — see the AdMob preview-build
+  troubleshooting elsewhere in this doc). Test units are unconditional
+  (always show, labelled "Test Ad" on screen), so forcing them for internal
+  testing builds actually isolates "is the integration broken" from
+  "is the account not linked yet." Same env var also unlocks the Ad
+  Inspector row in Settings (`isAdInspectorAvailable()`) without needing a
+  dev build.
+
   **`react-native-google-mobile-ads` is pinned to `16.3.4`, NOT latest —
   TWO separate incompatibilities ruled out everything from `16.4.0` up.**
   - `17.0.0`+ fails to compile: a genuine bug in the library's own native
@@ -309,6 +325,34 @@ again" at the same level.
     `LEVEL_LEADERBOARD_ID`/`DAILY_LEADERBOARD_IDS` in
     `src/leaderboards/index.js`, and the real Play Games `APP_ID` into
     `app.json`'s `withPlayGames` plugin entry.
+
+- **App launch: native splash + daily-board preload, both fixed after a real
+  device showed the app launching badly (blank window, then a mis-rendered
+  frame with the top/bottom cut off, then it settles).**
+  - **The native splash was never actually showing, on this SDK, at all.**
+    Expo SDK 54 REMOVED the legacy top-level `"splash"` key in `app.json` in
+    favour of the `expo-splash-screen` config plugin — which this project
+    never had installed. That top-level key had been silently doing nothing
+    this whole time (not a regression from anything recent), leaving a bare
+    native window for however long JS took to boot — exactly the "blank for
+    a couple of seconds" gap. Fixed: `expo-splash-screen` installed, its
+    plugin configured in `app.json` (dark `#1B1A17` background + the same
+    splash mark), and `App.js` now explicitly holds it with
+    `preventAutoHideAsync()` (called at module scope, before first render)
+    until fonts finish loading, then `hideAsync()`.
+  - **The daily-board preload (added right before this) was the other half
+    of the bug** — Expert/Master's board generation is a genuinely heavy
+    synchronous JS-thread block (exact solver, see the leaderboards/daily
+    section above), and starting the staggered warm-up the instant `App`
+    mounted raced React's own initial mount/layout — the thread being busy
+    generating a board interrupted that layout pass mid-flight, which is
+    what showed up as insets applying late (top/bottom "cut off") right
+    after launch. Fixed with a second layer of deferral:
+    `InteractionManager.runAfterInteractions()` now delays the WHOLE
+    staggered sequence until after the app's initial mount/layout/
+    animations have actually settled, on top of the existing `setTimeout(0)`
+    between individual tiers (which only yielded the thread between tiers,
+    not before the first one).
 
 ### Open questions (not yet decided)
 - Unlimited same-level retries may make losing feel stakeless vs Arrows' fail

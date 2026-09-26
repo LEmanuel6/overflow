@@ -6,11 +6,6 @@
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
-    "splash": {
-      "image": "./assets/splash.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#1B1A17"
-    },
     "assetBundlePatterns": [
       "**/*"
     ],
@@ -38,6 +33,14 @@
     "plugins": [
       "expo-font",
       "expo-system-ui",
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#1B1A17",
+          "image": "./assets/splash.png",
+          "resizeMode": "contain"
+        }
+      ],
       [
         "react-native-google-mobile-ads",
         {

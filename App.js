@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
-import { View } from 'react-native';
+import { View, InteractionManager } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
+import * as SplashScreen from 'expo-splash-screen';
 import {
   useFonts,
   Quicksand_500Medium,
@@ -40,6 +41,15 @@ const TRAY_SCREENS = new Set(['menu', 'stats', 'achievements', 'settings', 'dail
 const FULL = { flex: 1 };
 const HIDDEN = { display: 'none' };
 
+// Keep the native splash (icon + dark background, see app.json's
+// expo-splash-screen plugin) up until fonts have actually loaded, instead of
+// Expo's default of auto-hiding the instant the JS root view mounts — that
+// default left a bare, uncovered native window for however long fonts took,
+// which is exactly the "blank for a couple of seconds" launch gap this was
+// covering for. Call this at module scope (not inside the component) so it
+// runs before first render, the one time it matters.
+SplashScreen.preventAutoHideAsync().catch(() => {});
+
 export default function App() {
   const [screen, setScreen] = useState('menu');
   const [dailyDifficulty, setDailyDifficulty] = useState(null);
@@ -65,26 +75,44 @@ export default function App() {
   // finish before it's actually needed.
   useEffect(() => { initAds(); }, []);
 
-  // Pre-generates today's daily-challenge boards right after launch, so by
-  // the time a player actually opens the Daily Hub every tier is already
-  // cached (see Engine.isDailyBoardCached) and DailyChallengeScreen skips
-  // straight past its loading placeholder. Staggered one tier per macrotask
-  // (setTimeout 0) rather than all four in one synchronous burst — Expert/
-  // Master each run the exact solver once to generate (~200-450ms, see
-  // engine/index.js), and yielding between tiers keeps that from freezing
-  // the very first frame the player sees.
+  // Hides the native splash once fonts are actually ready — the counterpart
+  // to preventAutoHideAsync() above. Runs every render but hideAsync() is a
+  // no-op once the splash is already gone, so this is safe to leave
+  // unguarded rather than threading a "have I called this yet" ref through.
   useEffect(() => {
-    const today = localDateStr();
+    if (fontsLoaded) SplashScreen.hideAsync().catch(() => {});
+  }, [fontsLoaded]);
+
+  // Pre-generates today's daily-challenge boards, so by the time a player
+  // actually opens the Daily Hub every tier is already cached (see
+  // Engine.isDailyBoardCached) and DailyChallengeScreen skips straight past
+  // its loading placeholder. Two layers of deferral, not just one:
+  //  - InteractionManager.runAfterInteractions delays the whole thing until
+  //    AFTER the app's initial mount/layout/animations have actually
+  //    settled, rather than racing them — starting this the instant the
+  //    component mounts was blocking the JS thread while React was still
+  //    mid-layout, which showed up as a transient mis-rendered frame (safe-
+  //    area insets applied late, top/bottom looking "cut off") right after
+  //    launch.
+  //  - setTimeout(0) between EACH tier still yields the thread every step —
+  //    Expert/Master each run the exact solver once to generate (~200-450ms
+  //    on desktop, worse on a phone's JS engine, see engine/index.js), and
+  //    those are still real, individually-blocking chunks of work no matter
+  //    how long the whole sequence is delayed by the first point.
+  useEffect(() => {
     let cancelled = false;
-    let i = 0;
-    const warmNext = () => {
-      if (cancelled || i >= DAILY_DIFFICULTY_ORDER.length) return;
-      const difficulty = DAILY_DIFFICULTY_ORDER[i++];
-      if (!isDailyBoardCached(today, difficulty)) newDailyGame(today, difficulty);
-      setTimeout(warmNext, 0);
-    };
-    setTimeout(warmNext, 0);
-    return () => { cancelled = true; };
+    const handle = InteractionManager.runAfterInteractions(() => {
+      const today = localDateStr();
+      let i = 0;
+      const warmNext = () => {
+        if (cancelled || i >= DAILY_DIFFICULTY_ORDER.length) return;
+        const difficulty = DAILY_DIFFICULTY_ORDER[i++];
+        if (!isDailyBoardCached(today, difficulty)) newDailyGame(today, difficulty);
+        setTimeout(warmNext, 0);
+      };
+      warmNext();
+    });
+    return () => { cancelled = true; handle.cancel(); };
   }, []);
 
   if (!fontsLoaded) {

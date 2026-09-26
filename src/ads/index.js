@@ -23,8 +23,20 @@ const REAL_UNIT_IDS = {
   rewarded: { android: 'ca-app-pub-4040127785814300/2790867130', ios: null },
 };
 
+// Forces Google's TEST ad units (guaranteed fill, always shows, labelled
+// "Test Ad" on screen) for the `preview` EAS profile — see eas.json's
+// EXPO_PUBLIC_FORCE_TEST_ADS. Real ad serving depends on the AdMob app
+// being linked to a live Play Store listing, which can't happen until
+// Play Console is unblocked (see PROJECT.md) — so testing with real unit
+// IDs in the meantime can't tell "the integration is broken" apart from
+// "the account just has no fill yet." Test units sidestep that entirely:
+// they're unconditional, so if one doesn't show, the bug is genuinely in
+// this code, not Google's account-linking status. Only `preview` sets this
+// env var; a real production build (no env var set) still gets real ads.
+const FORCE_TEST_ADS = process.env.EXPO_PUBLIC_FORCE_TEST_ADS === 'true';
+
 function unitIdFor(slot, testId) {
-  return (!__DEV__ && REAL_UNIT_IDS[slot]?.[Platform.OS]) || testId;
+  return (!__DEV__ && !FORCE_TEST_ADS && REAL_UNIT_IDS[slot]?.[Platform.OS]) || testId;
 }
 
 let initPromise = null;
@@ -164,11 +176,18 @@ export async function showInterstitial() {
   await interstitialSlot.show(0);
 }
 
-// Dev-only: opens Google's on-device Ad Inspector — shows per-request status
+// Whether Settings should offer the Ad Inspector row — dev builds, or any
+// build with EXPO_PUBLIC_FORCE_TEST_ADS set (currently just `preview`).
+// Never true in a real production build.
+export function isAdInspectorAvailable() {
+  return __DEV__ || FORCE_TEST_ADS;
+}
+
+// Opens Google's on-device Ad Inspector — shows per-request status
 // (succeeded/failed and why), which ad unit was called, and whether this
 // device is currently recognised as a registered AdMob test device. Wired to
-// a Settings row gated by __DEV__ (see SettingsScreen). No-ops without the
-// native module.
+// a Settings row gated by isAdInspectorAvailable() (see SettingsScreen).
+// No-ops without the native module.
 export async function openAdInspector() {
   if (!Ads) return;
   try { await Ads.default().openAdInspector(); } catch (e) { /* inspector unavailable */ }
