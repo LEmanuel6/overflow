@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
@@ -19,8 +19,9 @@ import Tray from './src/components/Tray';
 import { useGame } from './src/state/useGame';
 import { useSettings } from './src/state/useSettings';
 import { useStats } from './src/state/useStats';
-import { useDailyStats } from './src/state/useDailyStats';
+import { useDailyStats, localDateStr } from './src/state/useDailyStats';
 import { isRewardedAvailable } from './src/ads';
+import { DAILY_DIFFICULTY_ORDER, isDailyBoardCached, newDailyGame } from './src/engine';
 import { ThemeProvider, darkTheme, lightTheme } from './src/theme';
 
 // Screens that show the bottom tab bar. Tray itself is rendered exactly
@@ -51,6 +52,28 @@ export default function App() {
     Quicksand_600SemiBold,
     Quicksand_700Bold,
   });
+
+  // Pre-generates today's daily-challenge boards right after launch, so by
+  // the time a player actually opens the Daily Hub every tier is already
+  // cached (see Engine.isDailyBoardCached) and DailyChallengeScreen skips
+  // straight past its loading placeholder. Staggered one tier per macrotask
+  // (setTimeout 0) rather than all four in one synchronous burst — Expert/
+  // Master each run the exact solver once to generate (~200-450ms, see
+  // engine/index.js), and yielding between tiers keeps that from freezing
+  // the very first frame the player sees.
+  useEffect(() => {
+    const today = localDateStr();
+    let cancelled = false;
+    let i = 0;
+    const warmNext = () => {
+      if (cancelled || i >= DAILY_DIFFICULTY_ORDER.length) return;
+      const difficulty = DAILY_DIFFICULTY_ORDER[i++];
+      if (!isDailyBoardCached(today, difficulty)) newDailyGame(today, difficulty);
+      setTimeout(warmNext, 0);
+    };
+    setTimeout(warmNext, 0);
+    return () => { cancelled = true; };
+  }, []);
 
   if (!fontsLoaded) {
     return <View style={{ flex: 1, backgroundColor: darkTheme.color.paper }} />;
