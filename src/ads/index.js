@@ -41,6 +41,13 @@ function unitIdFor(slot, testId) {
 
 let initPromise = null;
 let privacyOptionsRequired = false;
+// The specific reason the last initAds() attempt didn't end with ads ready —
+// surfaced through openAdInspector()'s error message below, since "it just
+// didn't work" isn't actionable. One of:
+//  'consent-threw'      — AdsConsent.gatherConsent() itself threw
+//  'consent-declined'   — gatherConsent() succeeded but canRequestAds: false
+//  'mobileads-init-threw' — mobileAds().initialize() threw
+let lastInitFailureReason = null;
 
 // Google's consent policy requires an in-app way to re-open the consent form
 // wherever it was shown (EEA/UK etc.). Settings shows a "Privacy options" row
@@ -61,22 +68,36 @@ export function initAds() {
   if (!Ads) return Promise.resolve(false);
   if (initPromise) return initPromise;
   initPromise = (async () => {
+    const { AdsConsent, AdsConsentPrivacyOptionsRequirementStatus, default: mobileAds } = Ads;
+
+    let info;
     try {
-      const { AdsConsent, AdsConsentPrivacyOptionsRequirementStatus, default: mobileAds } = Ads;
-      const info = await AdsConsent.gatherConsent();
-      privacyOptionsRequired =
-        info.privacyOptionsRequirementStatus === AdsConsentPrivacyOptionsRequirementStatus.REQUIRED;
-      if (!info.canRequestAds) return false;
-      await mobileAds().initialize();
-      // have the full-screen ads ready before they're needed — but a buyer of
-      // Remove Ads never sees interstitials, so don't fetch one for them.
-      await purchasesReady;
-      if (!getAdsRemoved()) interstitialSlot.load();
-      rewardedSlot.load();
-      return true;
+      info = await AdsConsent.gatherConsent();
     } catch (e) {
+      lastInitFailureReason = `consent-threw: ${e?.message || e}`;
       return false; // consent/init failure just means no ads this session
     }
+    privacyOptionsRequired =
+      info.privacyOptionsRequirementStatus === AdsConsentPrivacyOptionsRequirementStatus.REQUIRED;
+    if (!info.canRequestAds) {
+      lastInitFailureReason = 'consent-declined: gatherConsent() resolved but canRequestAds is false';
+      return false;
+    }
+
+    try {
+      await mobileAds().initialize();
+    } catch (e) {
+      lastInitFailureReason = `mobileads-init-threw: ${e?.message || e}`;
+      return false;
+    }
+
+    // have the full-screen ads ready before they're needed — but a buyer of
+    // Remove Ads never sees interstitials, so don't fetch one for them.
+    await purchasesReady;
+    if (!getAdsRemoved()) interstitialSlot.load();
+    rewardedSlot.load();
+    lastInitFailureReason = null;
+    return true;
   })();
   return initPromise;
 }
@@ -199,7 +220,7 @@ export async function openAdInspector() {
   if (!Ads) return { ok: false, reason: 'No native ads module in this build.' };
   const ready = await initAds();
   if (!ready) {
-    return { ok: false, reason: 'initAds() did not complete — consent/init is likely stuck or failing (see gatherConsent/initialize in initAds).' };
+    return { ok: false, reason: `initAds() didn't complete: ${lastInitFailureReason || 'unknown — check logs'}` };
   }
   try {
     await Ads.default().openAdInspector();

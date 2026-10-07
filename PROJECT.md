@@ -254,8 +254,22 @@ again" at the same level.
   the launch-time call succeeded, and surfacing the actual failure via
   `Alert` on failure (safe here specifically — this row never renders on
   web, unlike the rest of the app which avoids `Alert` deliberately, see
-  `ConfirmDialog.jsx`). Still waiting on what the Inspector actually
-  reports once Leon can open it.
+  `ConfirmDialog.jsx`).
+
+  **The error message worked — confirmed `initAds()` genuinely isn't
+  completing** ("consent/init is likely stuck or failing"), but the
+  message was still a category guess, not the real cause. Added proper
+  instrumentation: `initAds()` now tracks `lastInitFailureReason`,
+  distinguishing `gatherConsent()` throwing vs. `canRequestAds` legitimately
+  coming back false vs. `mobileAds().initialize()` throwing — each with the
+  actual caught error message — and `openAdInspector()` surfaces that
+  specific reason instead of a generic one. Leading suspect going in: Leon
+  was told early on to create/publish a GDPR consent message in AdMob's
+  Privacy & Messaging section, and it's never been confirmed that happened —
+  an unpublished message while the device is detected in a region requiring
+  one is a plausible way for `gatherConsent()` itself to throw. Not
+  confirmed; waiting on the next Inspector tap to say which of the three
+  it actually is.
 
   **`react-native-google-mobile-ads` is pinned to `16.3.4`, NOT latest —
   TWO separate incompatibilities ruled out everything from `16.4.0` up.**

@@ -1,8 +1,8 @@
 # Overflow — Privacy Policy
 
-**Effective date:** [DATE]
-**Developer:** [YOUR NAME OR STUDIO NAME]
-**Contact:** [CONTACT EMAIL]
+**Effective date:** 7 October 2026
+**Developer:** Leon Emanuel
+**Contact:** leon.emanuel123@gmail.com
 
 Overflow ("the app") is a puzzle game. This policy explains what information the app handles and how.
 
@@ -32,6 +32,10 @@ This data is collected by Google, not by us. How Google uses it is described in 
 
 The app offers an optional one-time purchase to remove some ads. Payment is handled entirely by Google Play or the Apple App Store — we never see or store your payment details. To confirm and restore your purchase, the app uses **RevenueCat**, which receives an anonymous app user identifier, your purchase status, and basic device information. See [RevenueCat's Privacy Policy](https://www.revenuecat.com/privacy).
 
+## Leaderboards (Google Play Games Services)
+
+If you choose to view or appear on the leaderboards (the main ladder, or a daily challenge difficulty), the app uses **Google Play Games Services** and signs you in with your existing Google account. Google Play Games may collect your player ID, display name, profile icon, and the scores you submit. This is handled entirely by Google — see [Google's Privacy Policy](https://policies.google.com/privacy). Leaderboards are optional: the rest of the app, including the full ladder and Daily Challenge, works without signing in.
+
 ## Analytics and crash reporting
 
 The app does not currently include third-party analytics or crash-reporting services beyond what is described above for advertising.
@@ -50,4 +54,4 @@ If this policy changes, the updated version will be posted at this address with 
 
 ## Contact
 
-Questions about this policy: [CONTACT EMAIL]
+Questions about this policy: leon.emanuel123@gmail.com
