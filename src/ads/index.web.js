@@ -31,5 +31,5 @@ export function isAdInspectorAvailable() {
 }
 
 export function openAdInspector() {
-  return Promise.resolve();
+  return Promise.resolve({ ok: false, reason: 'Ad Inspector is native-only.' });
 }

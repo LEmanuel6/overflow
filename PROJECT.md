@@ -240,6 +240,23 @@ again" at the same level.
   Inspector row in Settings (`isAdInspectorAvailable()`) without needing a
   dev build.
 
+  **Even forced TEST ads didn't resolve it** — Leon still saw nothing at
+  all, which actually narrowed the problem down further: test units are
+  unconditional, so if even those don't show, it's not an AdMob account
+  issue, it's something in the app. Investigating that surfaced the Ad
+  Inspector row was ALSO broken: styled as plain `Text` with no button
+  affordance (looked inert, which is exactly what Leon reported — "doesn't
+  look like it does anything"), and `openAdInspector()` silently swallowed
+  any failure (`catch (e) { /* inspector unavailable */ }`), which defeats
+  the entire point of a diagnostic tool. Fixed both: real button styling,
+  and `openAdInspector()` now returns `{ ok, reason }` — explicitly awaiting
+  `initAds()` first (idempotent, safe to call again) rather than assuming
+  the launch-time call succeeded, and surfacing the actual failure via
+  `Alert` on failure (safe here specifically — this row never renders on
+  web, unlike the rest of the app which avoids `Alert` deliberately, see
+  `ConfirmDialog.jsx`). Still waiting on what the Inspector actually
+  reports once Leon can open it.
+
   **`react-native-google-mobile-ads` is pinned to `16.3.4`, NOT latest —
   TWO separate incompatibilities ruled out everything from `16.4.0` up.**
   - `17.0.0`+ fails to compile: a genuine bug in the library's own native

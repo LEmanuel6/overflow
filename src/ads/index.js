@@ -187,8 +187,24 @@ export function isAdInspectorAvailable() {
 // (succeeded/failed and why), which ad unit was called, and whether this
 // device is currently recognised as a registered AdMob test device. Wired to
 // a Settings row gated by isAdInspectorAvailable() (see SettingsScreen).
-// No-ops without the native module.
+//
+// Returns a result object instead of silently swallowing failures — this is
+// the diagnostic tool, so a silent failure here defeats the point. Explicitly
+// awaits initAds() first (safe/idempotent — returns the cached promise if
+// already run) rather than assuming the launch-time call succeeded, since
+// "the inspector won't open" and "ads won't load" plausibly share the same
+// root cause (consent/init never completing).
+// -> { ok: true } | { ok: false, reason: string }
 export async function openAdInspector() {
-  if (!Ads) return;
-  try { await Ads.default().openAdInspector(); } catch (e) { /* inspector unavailable */ }
+  if (!Ads) return { ok: false, reason: 'No native ads module in this build.' };
+  const ready = await initAds();
+  if (!ready) {
+    return { ok: false, reason: 'initAds() did not complete — consent/init is likely stuck or failing (see gatherConsent/initialize in initAds).' };
+  }
+  try {
+    await Ads.default().openAdInspector();
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, reason: e?.message || String(e) };
+  }
 }

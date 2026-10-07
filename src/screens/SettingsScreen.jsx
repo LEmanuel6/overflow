@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { View, Text, Pressable, StyleSheet, TextInput } from 'react-native';
+import { View, Text, Pressable, StyleSheet, TextInput, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../theme';
@@ -47,11 +47,7 @@ export default function SettingsScreen({ darkMode, setDarkMode, sound, setSound,
         </View>
 
         {__DEV__ && <DevLevelJump styles={styles} theme={theme} onJump={onDevJumpToLevel} />}
-        {isAdInspectorAvailable() && (
-          <Pressable onPress={openAdInspector} style={styles.devClear}>
-            <Text style={styles.devLabel}>Dev: open Ad Inspector</Text>
-          </Pressable>
-        )}
+        {isAdInspectorAvailable() && <DevAdInspector styles={styles} />}
         {__DEV__ && isPurchaseStub && (
           <Pressable onPress={devClearPurchase} style={styles.devClear}>
             <Text style={styles.devLabel}>Dev: clear "Remove ads" test purchase</Text>
@@ -119,6 +115,33 @@ function PurchaseRows({ styles, theme }) {
         </Row>
       )}
     </>
+  );
+}
+
+// Opens Google's on-device Ad Inspector — the actual diagnostic for "why
+// aren't ads showing." Styled as a real button (was plain text before, which
+// read as inert/non-interactive) and surfaces openAdInspector()'s result via
+// Alert instead of failing silently — this row only ever renders natively
+// (isAdInspectorAvailable() is false on web), so Alert is safe to use here
+// even though the rest of the app avoids it (react-native-web doesn't
+// implement it — see ConfirmDialog.jsx).
+function DevAdInspector({ styles }) {
+  const [busy, setBusy] = useState(false);
+
+  const open = async () => {
+    setBusy(true);
+    const result = await openAdInspector();
+    setBusy(false);
+    if (!result.ok) Alert.alert('Ad Inspector', `Couldn't open it: ${result.reason}`);
+  };
+
+  return (
+    <View style={styles.devSection}>
+      <Text style={styles.devLabel}>Dev: Ad Inspector</Text>
+      <Pressable style={[styles.devButton, { alignSelf: 'flex-start' }, busy && styles.buyButtonBusy]} onPress={open} disabled={busy}>
+        <Text style={styles.devButtonText}>{busy ? 'Opening…' : 'Open'}</Text>
+      </Pressable>
+    </View>
   );
 }
 
