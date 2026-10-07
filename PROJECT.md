@@ -384,6 +384,23 @@ again" at the same level.
     animations have actually settled, on top of the existing `setTimeout(0)`
     between individual tiers (which only yielded the thread between tiers,
     not before the first one).
+  - **Round two, after the above two fixes: Menu still showed broken for a
+    couple of seconds** — Tray icons blank, "Recent achievements" overflowing
+    off the top — before settling. Two MORE distinct gaps, not a failure of
+    the fixes above:
+    - **Ionicons was never actually covered by the `fontsLoaded` gate.**
+      It's a separate font from the three Quicksand ones in `useFonts()`,
+      loaded through its own internal mechanism — so the splash could hide
+      (gated only on Quicksand) before Ionicons had actually finished
+      loading. Fixed by spreading `Ionicons.font` into the same `useFonts()`
+      call, so "fonts loaded" genuinely means every font the app uses.
+    - **`SafeAreaProvider` had no `initialMetrics`**, so real safe-area
+      insets (status bar height etc.) aren't known for the first render or
+      two — content assuming zero inset renders too high, then snaps down
+      once the real measurement arrives. This is
+      `react-native-safe-area-context`'s own documented fix: pass
+      `initialWindowMetrics` (a synchronous native constant, no async
+      round-trip) as `initialMetrics`.
 
 ### Open questions (not yet decided)
 - Unlimited same-level retries may make losing feel stakeless vs Arrows' fail

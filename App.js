@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { View, InteractionManager } from 'react-native';
-import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { SafeAreaProvider, initialWindowMetrics } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import * as SplashScreen from 'expo-splash-screen';
+import { Ionicons } from '@expo/vector-icons';
 import {
   useFonts,
   Quicksand_500Medium,
@@ -57,10 +58,17 @@ export default function App() {
   const statsApi = useStats();
   const dailyStatsApi = useDailyStats();
   const g = useGame(statsApi, { offerContinue: isRewardedAvailable() });
+  // Ionicons (Tray, Menu, Daily Hub, ...) is a separate font from these three
+  // and loads through its own internal mechanism — it was never actually
+  // covered by this gate, so the splash could hide (and the Menu screen
+  // appear) before Ionicons had finished loading, showing blank icons in
+  // the Tray for a moment. Explicitly included here so fontsLoaded means
+  // "every font this app uses," not just the custom text ones.
   const [fontsLoaded] = useFonts({
     Quicksand_500Medium,
     Quicksand_600SemiBold,
     Quicksand_700Bold,
+    ...Ionicons.font,
   });
 
   // Starts the ads SDK (consent + init + preloading the interstitial and
@@ -141,8 +149,14 @@ export default function App() {
   // persistent wrapper's background.
   const theme = settings.darkMode ? darkTheme : lightTheme;
 
+  // initialWindowMetrics is a synchronously-available native constant (no
+  // async round-trip) — without it, SafeAreaProvider reports zero insets for
+  // the first render or two after launch, so content that should sit below
+  // the status bar (e.g. Menu's "Recent achievements") briefly renders too
+  // high/overflowing before snapping into place once the real measurement
+  // arrives. This is react-native-safe-area-context's own documented fix.
   return (
-    <SafeAreaProvider>
+    <SafeAreaProvider initialMetrics={initialWindowMetrics}>
       <ThemeProvider darkMode={settings.darkMode}>
         <StatusBar style={settings.darkMode ? 'light' : 'dark'} />
         <View style={{ flex: 1, backgroundColor: theme.color.paper }}>
