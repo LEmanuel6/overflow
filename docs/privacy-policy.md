@@ -10,7 +10,7 @@ Overflow ("the app") is a puzzle game. This policy explains what information the
 
 The app saves your game progress, level, statistics, achievements, daily challenge results, and settings (such as dark mode) **locally on your device**. This information is not sent to us, and we do not run any servers that receive it. The app has no accounts or sign-in.
 
-You can erase this data at any time using the **Reset** button on the main menu, or by uninstalling the app.
+You can erase this data at any time by uninstalling the app.
 
 ## Advertising
 
