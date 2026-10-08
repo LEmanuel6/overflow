@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { View, InteractionManager } from 'react-native';
+import { View } from 'react-native';
 import { SafeAreaProvider, initialWindowMetrics } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import * as SplashScreen from 'expo-splash-screen';
@@ -10,6 +10,7 @@ import {
   Quicksand_600SemiBold,
   Quicksand_700Bold,
 } from '@expo-google-fonts/quicksand';
+import LoadingScreen from './src/components/LoadingScreen';
 import MenuScreen from './src/screens/MenuScreen';
 import GameScreen from './src/screens/GameScreen';
 import DailyHubScreen from './src/screens/DailyHubScreen';
@@ -23,6 +24,7 @@ import { useSettings } from './src/state/useSettings';
 import { useStats } from './src/state/useStats';
 import { useDailyStats, localDateStr } from './src/state/useDailyStats';
 import { isRewardedAvailable, initAds } from './src/ads';
+import { submitLevelScore } from './src/leaderboards';
 import { DAILY_DIFFICULTY_ORDER, isDailyBoardCached, newDailyGame } from './src/engine';
 import { ThemeProvider, darkTheme, lightTheme } from './src/theme';
 
@@ -83,6 +85,28 @@ export default function App() {
   // finish before it's actually needed.
   useEffect(() => { initAds(); }, []);
 
+  // Overall ladder leaderboard score = 1 point per ladder level cleared
+  // (stats.best - 1, since best is "next level to clear", i.e. clears+1)
+  // PLUS 1 point per daily-challenge TIER first-cleared on a given day,
+  // summed across all 4 tiers (dailyStats...daysWon already counts exactly
+  // that — "distinct calendar days first-solved", see useDailyStats.js — so
+  // re-clearing an already-solved tier to beat your time earns nothing
+  // further; that de-dup is what makes this safe to combine with ladder
+  // depth without the daily side being farmable). Leon's explicit call: the
+  // overall leaderboard should reward total engagement (ladder depth AND
+  // daily consistency), not just how deep into the ladder someone's gone.
+  // Computed here (not in GameScreen) because it needs BOTH stats blobs at
+  // once, which only App.js holds together. Play Games only ever keeps a
+  // player's best score per leaderboard, so no "did this increase" check is
+  // needed — submitting the same or a lower total is a safe no-op on
+  // Google's side, and this doubles as a resubmit-on-launch in case an
+  // earlier submit attempt failed.
+  const overallPoints = Math.max(0, statsApi.stats.best - 1) + DAILY_DIFFICULTY_ORDER.reduce(
+    (sum, id) => sum + (dailyStatsApi.dailyStats.difficulties[id]?.daysWon || 0),
+    0,
+  );
+  useEffect(() => { submitLevelScore(overallPoints); }, [overallPoints]);
+
   // Hides the native splash once fonts are actually ready — the counterpart
   // to preventAutoHideAsync() above. Runs every render but hideAsync() is a
   // no-op once the splash is already gone, so this is safe to leave
@@ -91,40 +115,48 @@ export default function App() {
     if (fontsLoaded) SplashScreen.hideAsync().catch(() => {});
   }, [fontsLoaded]);
 
-  // Pre-generates today's daily-challenge boards, so by the time a player
-  // actually opens the Daily Hub every tier is already cached (see
-  // Engine.isDailyBoardCached) and DailyChallengeScreen skips straight past
-  // its loading placeholder. Two layers of deferral, not just one:
-  //  - InteractionManager.runAfterInteractions delays the whole thing until
-  //    AFTER the app's initial mount/layout/animations have actually
-  //    settled, rather than racing them — starting this the instant the
-  //    component mounts was blocking the JS thread while React was still
-  //    mid-layout, which showed up as a transient mis-rendered frame (safe-
-  //    area insets applied late, top/bottom looking "cut off") right after
-  //    launch.
-  //  - setTimeout(0) between EACH tier still yields the thread every step —
-  //    Expert/Master each run the exact solver once to generate (~200-450ms
-  //    on desktop, worse on a phone's JS engine, see engine/index.js), and
-  //    those are still real, individually-blocking chunks of work no matter
-  //    how long the whole sequence is delayed by the first point.
+  // Pre-generates today's daily-challenge boards before the app is usable —
+  // Leon's explicit choice, after the previous (background, non-blocking)
+  // version let the Menu render and accept taps while Expert/Master's board
+  // generation (a real exact-solver pass, ~200-450ms+ each, worse on a
+  // phone) was still running: that's a genuinely heavy synchronous JS call,
+  // so a tap landing mid-generation was silently swallowed — the Daily
+  // Challenge button looked unresponsive rather than "still loading". The
+  // fix offered instead (only preload the two cheap tiers, let Expert/
+  // Master lazy-load with their existing spinner) was declined in favour of
+  // this: hold launch behind LoadingScreen's progress bar until all 4 are
+  // ready, so nothing is ever tappable-but-dead. Costs every launch however
+  // long this takes, even for a player who never opens Daily Challenge that
+  // session — a deliberate, known tradeoff, not an oversight.
+  //
+  // setTimeout(0) between EACH tier still yields the thread every step, so
+  // warmedCount's updates actually get a chance to paint (the progress bar
+  // moving) rather than batching invisibly into one jump at the end.
+  const [warmedCount, setWarmedCount] = useState(0);
+  const dailyWarmupDone = warmedCount >= DAILY_DIFFICULTY_ORDER.length;
   useEffect(() => {
     let cancelled = false;
-    const handle = InteractionManager.runAfterInteractions(() => {
-      const today = localDateStr();
-      let i = 0;
-      const warmNext = () => {
-        if (cancelled || i >= DAILY_DIFFICULTY_ORDER.length) return;
-        const difficulty = DAILY_DIFFICULTY_ORDER[i++];
-        if (!isDailyBoardCached(today, difficulty)) newDailyGame(today, difficulty);
-        setTimeout(warmNext, 0);
-      };
-      warmNext();
-    });
-    return () => { cancelled = true; handle.cancel(); };
+    const today = localDateStr();
+    let i = 0;
+    const warmNext = () => {
+      if (cancelled) return;
+      if (i >= DAILY_DIFFICULTY_ORDER.length) return;
+      const difficulty = DAILY_DIFFICULTY_ORDER[i++];
+      if (!isDailyBoardCached(today, difficulty)) newDailyGame(today, difficulty);
+      setWarmedCount(i);
+      setTimeout(warmNext, 0);
+    };
+    warmNext();
+    return () => { cancelled = true; };
   }, []);
 
-  if (!fontsLoaded) {
-    return <View style={{ flex: 1, backgroundColor: darkTheme.color.paper }} />;
+  if (!fontsLoaded || !dailyWarmupDone) {
+    // fontsLoaded alone still gates the NATIVE splash (see hideAsync()
+    // above) — this screen is what takes over the instant that hides, so
+    // the native splash's own hold doesn't need to (and shouldn't) wait on
+    // dailyWarmupDone too, or there'd be no progress bar to show for most
+    // of the wait.
+    return <LoadingScreen progress={warmedCount / DAILY_DIFFICULTY_ORDER.length} />;
   }
 
   const goMenu = () => setScreen('menu');

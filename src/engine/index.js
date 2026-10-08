@@ -598,16 +598,26 @@ function seedFromString(str) {
 // limit — separate boards, separate leaderboards-of-one, all seeded off the
 // same date. Cap ranges are starting points (not re-verified by the solver's
 // win-rate stats the way the level curve was) — needs playtesting:
-//  - beginner: tiny grid, tight 20s limit, gentle caps so the pressure is the
+//  - beginner: tiny grid, tight limit, gentle caps so the pressure is the
 //    clock, not the reading load.
 //  - intermediate: matches the original single daily board's params.
 //  - expert/master: caps climb toward (but stay under) levelParams()'s
 //    ceiling of 42, so numbers stay readable under a multi-minute clock.
+//
+// Time limits HALVED from the original 20s/60s/180s/300s — Leon's explicit
+// call after playtesting found them too generous (rarely actually timing
+// out). `scripts/calibrate-daily-timers.js` (bot-modeled solve time) only
+// weakly supported this — Beginner-Expert showed just 13-25% slack, and
+// Master's OLD 300s was already slightly tighter than the model's median —
+// but Leon's own direct play experience overrides a bot model here; this is
+// an explicit starting point for further playtesting, not a final number.
+// The rewarded "+50% time" continue (DailyChallengeScreen) becomes more
+// meaningful once timing out is a real possibility rather than rare.
 const DAILY_DIFFICULTIES = {
-  beginner:     { label: 'Beginner',     n: 3, ratio: 0.88, capMin: 6, capMax: 10, timeLimitMs: 20000 },
-  intermediate: { label: 'Intermediate', n: 4, ratio: 0.88, capMin: 5, capMax: 20, timeLimitMs: 60000 },
-  expert:       { label: 'Expert',       n: 5, ratio: 0.88, capMin: 5, capMax: 26, timeLimitMs: 180000 },
-  master:       { label: 'Master',       n: 6, ratio: 0.88, capMin: 4, capMax: 34, timeLimitMs: 300000 },
+  beginner:     { label: 'Beginner',     n: 3, ratio: 0.88, capMin: 6, capMax: 10, timeLimitMs: 10000 },
+  intermediate: { label: 'Intermediate', n: 4, ratio: 0.88, capMin: 5, capMax: 20, timeLimitMs: 30000 },
+  expert:       { label: 'Expert',       n: 5, ratio: 0.88, capMin: 5, capMax: 26, timeLimitMs: 90000 },
+  master:       { label: 'Master',       n: 6, ratio: 0.88, capMin: 4, capMax: 34, timeLimitMs: 150000 },
 };
 const DAILY_DIFFICULTY_ORDER = ['beginner', 'intermediate', 'expert', 'master'];
 

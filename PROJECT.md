@@ -325,9 +325,23 @@ again" at the same level.
   leaderboard card, and a trophy button per tier on the Daily Hub. NOT on
   `DailyChallengeScreen` itself (Leon: nobody's checking a leaderboard
   mid-attempt) — view the tier's board from the Hub before or after playing.
-  - **Ladder:** one persistent leaderboard, submitted on every win
-    (`GameScreen`) — Play Games only keeps a player's BEST score per
+  - **Ladder ("overall"):** one persistent leaderboard, ranked by POINTS, not
+    raw level — 1 point per ladder level cleared (`stats.best - 1`) + 1 point
+    per daily-challenge TIER first-cleared on a given day (summed across all
+    4 tiers, using `dailyStats...daysWon` — "distinct calendar days
+    first-solved", already de-duped against same-day retries-to-beat-your-
+    time, see `useDailyStats.js`). Leon's explicit call: the overall board
+    should reward total engagement (ladder depth AND daily consistency), not
+    just how deep into the ladder someone's gone — a player who diligently
+    clears all 4 daily tiers every day can out-rank someone who's gone
+    deeper into the ladder alone, which is the intended tradeoff, not a bug.
+    Computed in `App.js` (needs both stats blobs at once — moved OUT of
+    `GameScreen`, which only had the ladder half) and submitted whenever the
+    total changes; Play Games only keeps a player's BEST score per
     leaderboard, so no "is this a new best?" check was needed on our side.
+    The daily `daysWon` de-dup is what makes combining the two safe — without
+    it, re-clearing an already-solved easy tier repeatedly would trivially
+    farm points.
   - **Daily challenge:** one persistent leaderboard PER DIFFICULTY TIER
     (times aren't comparable across tiers — different board size/caps), lower
     ms = better, submitted on every daily win (`DailyChallengeScreen`). Play
@@ -401,6 +415,32 @@ again" at the same level.
       `react-native-safe-area-context`'s own documented fix: pass
       `initialWindowMetrics` (a synchronous native constant, no async
       round-trip) as `initialMetrics`.
+  - **Round three: Daily Challenge button went tappable-but-unresponsive.**
+    The `InteractionManager`-deferred warm-up from round one stopped racing
+    the FIRST layout, but once it actually ran, Expert/Master's generation
+    still blocked the JS thread for its real duration — and now that the
+    Menu was already interactive by the time it ran, a tap landing mid-
+    generation was silently swallowed (not just that button — ANY tap,
+    since the whole thread is blocked). I offered the lower-cost fix (only
+    eagerly preload the two cheap tiers; Expert/Master fall back to their
+    existing lazy-load-with-spinner screen) and explicitly recommended it
+    over holding launch — **Leon chose to hold launch instead**, accepting
+    the real cost (every single launch now waits for all 4 tiers, not just
+    the Expert/Master edge case) in exchange for zero chance of a dead-
+    feeling tap, ever. Implemented as `src/components/LoadingScreen.jsx`:
+    the native splash still hides at `fontsLoaded` exactly as before (NOT
+    also gated on warm-up, or there'd be no progress bar for most of the
+    wait), and `LoadingScreen` takes over the instant it hides — same
+    `./assets/splash.png` + `#1B1A17` background so there's no visible seam
+    — now WITH a real progress bar, which the native splash can't show on
+    its own (it's a static image, no live JS-driven progress). The app's
+    actual screens don't mount until both `fontsLoaded` AND all 4 tiers are
+    warmed. `InteractionManager` was removed from the warm-up effect
+    entirely (no longer meaningful — nothing else is interactive while this
+    screen is up, so there's nothing left to race); the per-tier
+    `setTimeout(0)` stayed, now serving a new purpose — letting
+    `warmedCount` actually paint between tiers so the bar visibly moves
+    rather than jumping once at the end.
 
 ### Open questions (not yet decided)
 - Unlimited same-level retries may make losing feel stakeless vs Arrows' fail

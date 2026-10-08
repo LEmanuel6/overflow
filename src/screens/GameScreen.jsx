@@ -8,13 +8,23 @@ import Hud from '../components/Hud';
 import ConfirmDialog from '../components/ConfirmDialog';
 import { livesForGrid, continueLivesForGrid } from '../engine';
 import { showRewarded, showInterstitial } from '../ads';
-import { submitLevelScore } from '../leaderboards';
 
-// An interstitial plays automatically the moment every Nth level is cleared —
-// levels are quick, so every 10th keeps ads infrequent. It can't be dodged by
+// An interstitial plays automatically the moment every Nth level is cleared.
+// Asymmetric cadence, Leon's call: every 10th through the L1-100 tutorial
+// band (TIER1_LEVELS in the engine) — levels there are fast, and the first
+// ad shouldn't land before a player's formed a good first impression —
+// tightening to every 7th from L101 on, once a player's demonstrably
+// engaged and later levels take longer anyway. It can't be dodged by
 // tapping Menu: the win buttons stay disabled until the ad closes. Never
 // mid-board.
-const INTERSTITIAL_EVERY_LEVELS = 10;
+const INTERSTITIAL_TUTORIAL_BAND_END = 100;
+const INTERSTITIAL_EVERY_LEVELS_EARLY = 10;
+const INTERSTITIAL_EVERY_LEVELS_LATE = 7;
+
+function isInterstitialLevel(level) {
+  const every = level <= INTERSTITIAL_TUTORIAL_BAND_END ? INTERSTITIAL_EVERY_LEVELS_EARLY : INTERSTITIAL_EVERY_LEVELS_LATE;
+  return level % every === 0;
+}
 
 export default function GameScreen({ g, stats, onMenu }) {
   const { state, display, bursting, wiping, revealing, boardId, status, tap, retry, continueNext, canContinue, reviveAfterLoss } = g;
@@ -29,23 +39,11 @@ export default function GameScreen({ g, stats, onMenu }) {
   // this screen remounts while the board is still in its 'won' state.
   const adShownForBoard = useRef(null);
   useEffect(() => {
-    if (status !== 'won' || state.level % INTERSTITIAL_EVERY_LEVELS !== 0) return;
+    if (status !== 'won' || !isInterstitialLevel(state.level)) return;
     if (adShownForBoard.current === boardId) return;
     adShownForBoard.current = boardId;
     setAdBusy(true);
     showInterstitial().then(() => setAdBusy(false)); // always resolves
-  }, [status, boardId, state.level]);
-
-  // Submits to the ladder leaderboard on every win — Play Games keeps only a
-  // player's best score per leaderboard, so no "is this a new best?" check
-  // is needed here. scoreSubmittedForBoard guards the same remount case as
-  // adShownForBoard above.
-  const scoreSubmittedForBoard = useRef(null);
-  useEffect(() => {
-    if (status !== 'won') return;
-    if (scoreSubmittedForBoard.current === boardId) return;
-    scoreSubmittedForBoard.current = boardId;
-    submitLevelScore(state.level);
   }, [status, boardId, state.level]);
 
   const banner =

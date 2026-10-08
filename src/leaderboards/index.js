@@ -5,10 +5,18 @@
 // into a Google account on the device.
 //
 // Two kinds of leaderboard:
-//  - ladder: one persistent leaderboard, highest level reached. Submitting a
-//    lower score than a player's existing best is a no-op on Google's side,
-//    so every win can submit unconditionally — no "is this a new best?"
-//    bookkeeping needed here.
+//  - ladder ("overall"): one persistent leaderboard, POINTS not raw level —
+//    1 point per ladder level cleared + 1 point per daily-challenge tier
+//    first-cleared on a given day (summed across all 4 tiers), so it rewards
+//    total engagement rather than pure ladder depth (Leon's explicit call —
+//    see PROJECT.md). Computed in App.js (needs both the ladder and daily
+//    stats blobs at once, which only App.js holds together) and submitted
+//    via submitLevelScore(points) — the function name is a holdover from
+//    when this was literally the raw level, kept as-is since renaming it
+//    isn't worth the churn. Submitting a lower score than a player's
+//    existing best is a no-op on Google's side, so this can submit
+//    unconditionally on every change — no "is this a new best?" bookkeeping
+//    needed here.
 //  - daily challenge: one persistent leaderboard PER DIFFICULTY TIER (times
 //    aren't comparable across tiers — different board size/caps), ranked
 //    ascending (lower ms = better). Play Games' own leaderboard UI has a
@@ -90,12 +98,13 @@ async function ensureSignedIn() {
   return signInPromise;
 }
 
-// Fire-and-forget: called on every ladder win (see GameScreen). Never throws.
-export async function submitLevelScore(level) {
+// Fire-and-forget: called from App.js whenever the combined points total
+// (ladder clears + daily tiers first-cleared) changes. Never throws.
+export async function submitLevelScore(points) {
   if (!isLeaderboardsAvailable()) return;
   try {
     if (!(await ensureSignedIn())) return;
-    await GooglePlayGames.submitScore(LEVEL_LEADERBOARD_ID, level);
+    await GooglePlayGames.submitScore(LEVEL_LEADERBOARD_ID, points);
   } catch (e) { /* leaderboard submit failing shouldn't affect gameplay */ }
 }
 
