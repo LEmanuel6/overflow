@@ -27,7 +27,7 @@ function isInterstitialLevel(level) {
 }
 
 export default function GameScreen({ g, stats, onMenu }) {
-  const { state, display, bursting, wiping, revealing, boardId, status, tap, retry, continueNext, canContinue, reviveAfterLoss } = g;
+  const { state, display, bursting, wiping, revealing, boardId, status, tap, retry, continueNext, canContinue, reviveAfterLoss, displayLives } = g;
   const theme = useTheme();
   const styles = useMemo(() => makeStyles(theme), [theme]);
   const insets = useSafeAreaInsets();
@@ -69,11 +69,24 @@ export default function GameScreen({ g, stats, onMenu }) {
     onMenu();
   };
 
+  // Once the board's already resolved there's nothing left to lose, so the
+  // "you'll lose progress" confirm doesn't apply — and for a win, retry()
+  // would actually have DISCARDED the win (it regenerates the SAME level
+  // rather than advancing), which is exactly the bug this guards against.
+  // A win mirrors the Menu button exactly (advance to the next level in the
+  // background, then leave) rather than just leaving the won board sitting
+  // there unresolved for next time.
+  const onAbortPress = () => {
+    if (status === 'won') { continueNext(); onMenu(); return; }
+    if (status === 'lost') { onMenu(); return; }
+    setConfirmingAbort(true);
+  };
+
   return (
     <SafeAreaView style={styles.safe}>
       <Pressable
         style={[styles.abortButton, { top: insets.top + 8 }]}
-        onPress={() => setConfirmingAbort(true)}
+        onPress={onAbortPress}
         hitSlop={12}
       >
         <Ionicons name="arrow-back" size={22} color={theme.color.ink} />
@@ -81,7 +94,7 @@ export default function GameScreen({ g, stats, onMenu }) {
       <View style={styles.container}>
         <Text style={styles.title}>OVERFLOW</Text>
 
-        <Hud level={state.level} lives={state.lives} maxLives={livesForGrid(state.n)} streak={stats.currentStreak} />
+        <Hud level={state.level} lives={displayLives} maxLives={livesForGrid(state.n)} streak={stats.currentStreak} boardId={boardId} />
 
         <Board
           state={state}

@@ -62,9 +62,8 @@ export function useGame(statsApi, opts = {}) {
     initialState,                                   // () => state; default Engine.newGame(1)
     persistProgress = true,                          // gates AsyncStorage resume/persist
     regenerate,                                      // (state) => state; used by retry()
-    onWon = (s) => statsApi?.boardWon({ level: s.level, n: s.n, taps: s.taps, lives: s.lives }),
+    onWon = (s, info) => statsApi?.boardWon({ level: s.level, n: s.n, taps: s.taps, lives: s.lives, ...info }),
     onLost = () => statsApi?.boardLost(),
-    onBoardStarted = () => statsApi?.boardStarted(),
     onTapped = (info) => statsApi?.tapped(info),
     // When true, a loss isn't reported (onLost) the instant it happens — it's
     // held until the player commits to it (retry / start another board /
@@ -81,7 +80,29 @@ export function useGame(statsApi, opts = {}) {
   const [busy, setBusy] = useState(false);               // true while a cascade/wipe animates
   const [status, setStatus] = useState('play');          // 'play' | 'won' | 'lost'
   const [boardId, setBoardId] = useState(0);              // bumps whenever a NEW board is generated
+  // Lives, but ticking down ONCE PER BURST as a cascade plays rather than
+  // jumping straight to the post-cascade total — `state.lives` itself still
+  // only updates once, at the end (nothing about scoring/persistence/win-
+  // loss resolution changes), so this exists purely so the Hud's Overflow
+  // bar can animate in step with each cell actually popping, not after the
+  // whole chain has already resolved. See the per-burst setDisplayLives call
+  // in tap() below.
+  const [displayLives, setDisplayLives] = useState(() => state.lives);
   const timers = useRef([]);
+
+  // Per-attempt trackers consumed by onWon (flawless-clear detection, best-
+  // clear-time) — a private pair per useGame INSTANCE, not a store shared
+  // across the whole app. This matters: the ladder's useGame instance (see
+  // App.js) stays mounted for the entire session regardless of which screen
+  // is visible, so if this lived in the shared stats store instead (it used
+  // to), a daily-challenge tap/board would corrupt whatever ladder board
+  // happens to be in progress elsewhere — reachable any time, since the
+  // ladder's board is "in progress" from app launch, not just while that
+  // tab is open. Reset in beginBoard() for every new attempt; NOT reset by
+  // reviveAfterLoss, since a loss-then-revive-then-win is deliberately still
+  // not "flawless".
+  const livesLostThisBoardRef = useRef(0);
+  const boardStartTimeRef = useRef(Date.now());
 
   // --- rewarded continue bookkeeping -----------------------------------------
   // One continue per board attempt. pendingLossRef holds a loss that has
@@ -98,12 +119,25 @@ export function useGame(statsApi, opts = {}) {
     onLostRef.current();
   }, []);
 
+  // Set when a countdown expiry (the daily challenge's forceTimeout) lands
+  // while a cascade/wipe is still animating — now a real possibility since
+  // the countdown keeps running through bursts as an intended penalty (see
+  // useCountdown.js) instead of pausing for the animation. Rather than drop
+  // that expiry or cut the animation off mid-flight, it's applied the moment
+  // the board next goes idle (the effect below) — but only if the cascade's
+  // own outcome didn't already resolve the board first (win/loss already
+  // flips `status` away from 'play', which the effect checks).
+  const pendingTimeoutRef = useRef(false);
+
   // Every new board attempt starts here: report any still-pending loss for the
   // board being left, and make the next attempt's single continue available.
   const beginBoard = useCallback(() => {
     commitLoss();
     continueUsedRef.current = false;
     setContinueUsed(false);
+    pendingTimeoutRef.current = false;
+    livesLostThisBoardRef.current = 0;
+    boardStartTimeRef.current = Date.now();
   }, [commitLoss]);
 
   // Leaving the screen with a loss still pending (e.g. the daily challenge's
@@ -115,7 +149,9 @@ export function useGame(statsApi, opts = {}) {
   // opts out (persistProgress: false, e.g. the daily challenge) just reveals
   // whatever initialState() already produced — no storage touch at all.
   useEffect(() => {
-    onBoardStarted(); // the initial board created above counts too
+    // the initial board created above counts as "begun" too
+    livesLostThisBoardRef.current = 0;
+    boardStartTimeRef.current = Date.now();
     if (!persistProgress) {
       runBoardReveal(state.n);
       return () => timers.current.forEach(clearTimeout);
@@ -129,8 +165,10 @@ export function useGame(statsApi, opts = {}) {
           if (saved.level) {
             const g = Engine.newGame(saved.level);
             setState(g); setDisplay(g.cells); setStatus('play');
+            setDisplayLives(g.lives);
             setBoardId((id) => id + 1);
-            onBoardStarted();
+            livesLostThisBoardRef.current = 0;
+            boardStartTimeRef.current = Date.now();
             runBoardReveal(g.n);
             loadedSaved = true;
           }
@@ -156,7 +194,10 @@ export function useGame(statsApi, opts = {}) {
   const settleWin = useCallback((wonState) => {
     setStatus('won');
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
-    onWon(wonState);
+    onWon(wonState, {
+      livesLostThisBoard: livesLostThisBoardRef.current,
+      elapsedMs: Date.now() - boardStartTimeRef.current,
+    });
   }, [onWon]);
 
   const settleLoss = useCallback(() => {
@@ -212,6 +253,7 @@ export function useGame(statsApi, opts = {}) {
     if (res.result === 'ignored') return;
 
     onTapped({ bursts: res.bursts, livesLost: res.livesLost || 0 });
+    livesLostThisBoardRef.current += res.livesLost || 0;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
 
     // clean tap, no cascade
@@ -236,6 +278,7 @@ export function useGame(statsApi, opts = {}) {
       const stepStart = k * BURST_STEP;
       after(stepStart + RISE_HOLD, () => {
         setBursting((b) => [...b, idx]);
+        setDisplayLives((l) => Math.max(0, l - 1)); // this exact burst is the life spent
         Haptics.impactAsync(
           k === res.bursts.length - 1 && res.result === 'lost'
             ? Haptics.ImpactFeedbackStyle.Heavy
@@ -251,6 +294,7 @@ export function useGame(statsApi, opts = {}) {
     after(total, () => {
       setBursting([]);
       setState(res.state);
+      setDisplayLives(res.state.lives); // resync exactly — guards against any rounding drift
       if (res.result === 'lost') {
         setDisplay(res.state.cells);
         setBusy(false);
@@ -272,33 +316,44 @@ export function useGame(statsApi, opts = {}) {
     beginBoard();
     const g = (regenerate || Engine.retry)(state);
     setState(g); setDisplay(g.cells); setBursting([]); setWiping([]); setStatus('play'); setBusy(false);
+    setDisplayLives(g.lives);
     setBoardId((id) => id + 1);
-    onBoardStarted();
     runBoardReveal(g.n);
-  }, [state, regenerate, onBoardStarted, runBoardReveal, beginBoard]);
+  }, [state, regenerate, runBoardReveal, beginBoard]);
 
   // External forced loss (e.g. a daily-challenge countdown hitting zero) —
-  // mirrors the cascade-lost path in tap() above. Guarded so it's a no-op if
-  // the board already resolved, or (defensively) mid-cascade — the countdown
-  // this is designed for only decrements while idle, so busy should never be
-  // true here in practice.
+  // mirrors the cascade-lost path in tap() above. A no-op if the board
+  // already resolved. If it lands mid-cascade (the countdown now keeps
+  // running through bursts — see useCountdown.js), it doesn't cut the
+  // animation off: it just records the expiry and the effect below applies
+  // it the moment the board goes idle, unless the cascade's own outcome
+  // (win or loss) resolved the board first.
   const forceTimeout = useCallback(() => {
-    if (status !== 'play' || busy) return;
+    if (status !== 'play') return;
+    if (busy) { pendingTimeoutRef.current = true; return; }
     clearTimers();
     setDisplay(state.cells);
     settleLoss();
   }, [status, busy, state, settleLoss]);
+
+  useEffect(() => {
+    if (busy || status !== 'play' || !pendingTimeoutRef.current) return;
+    pendingTimeoutRef.current = false;
+    clearTimers();
+    setDisplay(state.cells);
+    settleLoss();
+  }, [busy, status, state, settleLoss]);
 
   const restart = useCallback(() => {
     clearTimers();
     beginBoard();
     const g = Engine.newGame(1);
     setState(g); setDisplay(g.cells); setBursting([]); setWiping([]); setStatus('play'); setBusy(false);
+    setDisplayLives(g.lives);
     setBoardId((id) => id + 1);
-    statsApi.boardStarted();
     persist(1);
     runBoardReveal(g.n);
-  }, [persist, statsApi, runBoardReveal, beginBoard]);
+  }, [persist, runBoardReveal, beginBoard]);
 
   // Advance from a cleared board to the next level (called from the "Continue"
   // prompt, not automatic — Leon wants a deliberate step, not an auto-advance).
@@ -307,11 +362,11 @@ export function useGame(statsApi, opts = {}) {
     beginBoard();
     const ng = Engine.nextLevel(state);
     setState(ng); setDisplay(ng.cells); setBursting([]); setWiping([]); setStatus('play'); setBusy(false);
+    setDisplayLives(ng.lives);
     setBoardId((id) => id + 1);
-    statsApi.boardStarted();
     persist(ng.level);
     runBoardReveal(ng.n);
-  }, [state, persist, statsApi, runBoardReveal, beginBoard]);
+  }, [state, persist, runBoardReveal, beginBoard]);
 
   // Dev-only: jump straight to an arbitrary level, to test a specific
   // difficulty band without grinding there. Ladder-only, mirrors restart/
@@ -321,11 +376,11 @@ export function useGame(statsApi, opts = {}) {
     beginBoard();
     const g = Engine.newGame(level);
     setState(g); setDisplay(g.cells); setBursting([]); setWiping([]); setStatus('play'); setBusy(false);
+    setDisplayLives(g.lives);
     setBoardId((id) => id + 1);
-    statsApi.boardStarted();
     persist(level);
     runBoardReveal(g.n);
-  }, [persist, statsApi, runBoardReveal, beginBoard]);
+  }, [persist, runBoardReveal, beginBoard]);
 
   // Rewarded continue: undo a loss and put the same board back in play (the
   // caller has already had the reward earned). A loss by lives restores
@@ -340,6 +395,7 @@ export function useGame(statsApi, opts = {}) {
     const lives = state.lives > 0 ? state.lives : Engine.continueLivesForGrid(state.n);
     const r = Engine.revive(state, lives);
     setState(r.state);
+    setDisplayLives(r.state.lives);
     setStatus('play');
     if (r.result === 'won') {
       // the lost board had already resolved to all-green — reviving it is a win
@@ -352,6 +408,7 @@ export function useGame(statsApi, opts = {}) {
 
   return {
     state, display, bursting, wiping, revealing, busy, status, boardId,
+    displayLives,
     tap, retry, restart, continueNext, forceTimeout, goToLevel,
     canContinue, reviveAfterLoss,
     // rendering hints

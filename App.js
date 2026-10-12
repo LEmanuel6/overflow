@@ -209,7 +209,7 @@ export default function App() {
               <DailyHubScreen dailyStatsApi={dailyStatsApi} onBack={goMenu} onSelectDifficulty={goDailyPlay} />
             </View>
             {screen === 'dailyPlay' && (
-              <DailyChallengeScreen difficulty={dailyDifficulty} dailyStatsApi={dailyStatsApi} onBack={goDailyHub} />
+              <DailyChallengeScreen difficulty={dailyDifficulty} dailyStatsApi={dailyStatsApi} statsApi={statsApi} onBack={goDailyHub} />
             )}
             <View style={screen === 'stats' ? FULL : HIDDEN}>
               <StatsScreen stats={statsApi.stats} dailyStats={dailyStatsApi.dailyStats} onBack={goMenu} />

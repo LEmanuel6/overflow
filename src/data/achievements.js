@@ -92,18 +92,14 @@ export const ACHIEVEMENTS = [
   // defaults to 3 for a brand-new (or freshly reset) profile, so using it
   // directly as `current` would show e.g. "3/4" — 75% done — on a profile
   // that hasn't cleared a single board.
+  //
+  // Stops at 5x5: the ladder's grid size hard-caps at HARD_WALL_GRID (5, see
+  // engine/index.js) — 6x6+ tiers were dead achievements nobody could ever
+  // unlock, not a reference to a removed feature living on by accident.
   { id: 'tier-4x4', category: 'Grid Sizes', title: '4×4 Cleared', description: 'Clear a 4×4 board.', icon: 'grid-outline',
     track: 'grid-sizes', check: (s) => (s.clearedByTier['4'] || 0) > 0, progress: (s) => ({ current: Math.max(0, Math.min(s.highestGridSize, 4) - 3), target: 1 }) },
   { id: 'tier-5x5', category: 'Grid Sizes', title: '5×5 Cleared', description: 'Clear a 5×5 board.', icon: 'grid-outline',
     track: 'grid-sizes', check: (s) => (s.clearedByTier['5'] || 0) > 0, progress: (s) => ({ current: Math.max(0, Math.min(s.highestGridSize, 5) - 3), target: 2 }) },
-  { id: 'tier-6x6', category: 'Grid Sizes', title: '6×6 Cleared', description: 'Clear a 6×6 board.', icon: 'grid-outline',
-    track: 'grid-sizes', check: (s) => (s.clearedByTier['6'] || 0) > 0, progress: (s) => ({ current: Math.max(0, Math.min(s.highestGridSize, 6) - 3), target: 3 }) },
-  { id: 'tier-7x7', category: 'Grid Sizes', title: '7×7 Cleared', description: 'Clear a 7×7 board.', icon: 'grid-outline',
-    track: 'grid-sizes', check: (s) => (s.clearedByTier['7'] || 0) > 0, progress: (s) => ({ current: Math.max(0, Math.min(s.highestGridSize, 7) - 3), target: 4 }) },
-  { id: 'tier-8x8', category: 'Grid Sizes', title: '8×8 Cleared', description: 'Clear an 8×8 board.', icon: 'grid-outline',
-    track: 'grid-sizes', check: (s) => (s.clearedByTier['8'] || 0) > 0, progress: (s) => ({ current: Math.max(0, Math.min(s.highestGridSize, 8) - 3), target: 5 }) },
-  { id: 'tier-9x9', category: 'Grid Sizes', title: '9×9 Cleared', description: 'Clear a 9×9 board.', icon: 'grid-outline',
-    track: 'grid-sizes', check: (s) => (s.clearedByTier['9'] || 0) > 0, progress: (s) => ({ current: Math.max(0, Math.min(s.highestGridSize, 9) - 3), target: 6 }) },
 
   // --- Skill ---------------------------------------------------------------
   { id: 'flawless', category: 'Skill', title: 'Flawless', description: 'Clear a board without losing a life.', icon: 'shield-checkmark-outline',

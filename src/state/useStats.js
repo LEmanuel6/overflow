@@ -7,9 +7,24 @@
 // That gives a real order to sort "recently unlocked" by, without a second
 // store that could drift out of sync with the achievement definitions.
 //
-// useGame calls the four recorder functions at the right points in the game
-// lifecycle (see boardStarted/tapped/boardLost/boardWon below) — this hook
-// doesn't know anything about animation/timing, just outcomes.
+// useGame calls the recorder functions at the right points in the game
+// lifecycle (see tapped/boardLost/boardWon below) — this hook doesn't know
+// anything about animation/timing, just outcomes.
+//
+// boardWon/boardLost take an explicit `trackLadder` flag from the caller
+// rather than assuming every call is from the ladder — the daily challenge
+// (see DailyChallengeScreen) also reports taps and board outcomes here, so
+// the general lifetime counters (totalTaps,
+// boardsCleared, flawlessClears, etc. — what most achievements actually
+// read) grow from EITHER mode, while ladder-only concepts (best level, win
+// streaks) only ever move from the ladder's own calls. Per-board transient
+// tracking (lives lost so far this attempt, when this attempt started) used
+// to live here as module-shared refs, but that only worked by accident: the
+// ladder's useGame instance stays mounted for the whole app session
+// regardless of which screen is visible, so a daily board's taps/timing
+// would have corrupted whatever ladder board happened to be in progress.
+// That tracking now lives in useGame.js instead, one private copy per
+// instance, and is passed in here explicitly (livesLostThisBoard, elapsedMs).
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -83,12 +98,6 @@ function withUnlocks(next) {
 export function useStats() {
   const [stats, setStats] = useState(DEFAULT_STATS);
   const loadedRef = useRef(false);
-
-  // per-board transient trackers — reset by boardStarted(), consumed by
-  // boardWon()/boardLost(). Not persisted: if the app is killed mid-board
-  // these just reset, which is fine (nothing was won or lost yet).
-  const livesLostThisBoardRef = useRef(0);
-  const boardStartTimeRef = useRef(Date.now());
   const sessionStartRef = useRef(Date.now());
 
   const persist = useCallback((next) => {
@@ -162,21 +171,17 @@ export function useStats() {
   }, [persist]);
 
   // --- recorders, called by useGame at the right lifecycle points -----------
-  const boardStarted = useCallback(() => {
-    livesLostThisBoardRef.current = 0;
-    boardStartTimeRef.current = Date.now();
-  }, []);
 
   // Dev-only: wipe lifetime stats + achievement unlocks back to a blank slate.
   const reset = useCallback(() => {
-    livesLostThisBoardRef.current = 0;
     setStats(DEFAULT_STATS);
     persist(DEFAULT_STATS);
   }, [persist]);
 
+  // Taps/bursts/chain-reactions are general skill stats (what the Taps and
+  // Chain Reaction achievements read) — counted the same way regardless of
+  // which mode reported them.
   const tapped = useCallback(({ bursts, livesLost }) => {
-    livesLostThisBoardRef.current += livesLost;
-
     setStats((prev) => {
       const next = withUnlocks({
         ...prev,
@@ -191,52 +196,63 @@ export function useStats() {
     });
   }, [persist]);
 
-  const boardLost = useCallback(() => {
+  // `trackLadder` (default true, preserving today's ladder behaviour exactly)
+  // gates the LADDER-ONLY fields: win streaks and flawless-streak (both
+  // meaningless for a one-board-per-day daily attempt — see the Hud "Streak"
+  // removal), and the ladder's `best` level (daily has no level number at
+  // all). Everything else here is a general lifetime counter the daily
+  // challenge also feeds (with trackLadder: false), via DailyChallengeScreen.
+  const boardLost = useCallback(({ trackLadder = true } = {}) => {
     setStats((prev) => {
-      const next = withUnlocks({
-        ...prev,
+      let patch = {
         boardsLost: prev.boardsLost + 1,
         gamesPlayed: prev.gamesPlayed + 1,
-        currentStreak: 0,
-        flawlessStreak: 0,
-      });
+      };
+      if (trackLadder) patch = { ...patch, currentStreak: 0, flawlessStreak: 0 };
+      const next = withUnlocks({ ...prev, ...patch });
       persist(next);
       return next;
     });
   }, [persist]);
 
-  const boardWon = useCallback(({ level, n, taps, lives }) => {
-    const livesLostThisBoard = livesLostThisBoardRef.current;
-    const elapsedMs = Date.now() - boardStartTimeRef.current;
-
+  // `livesLostThisBoard`/`elapsedMs` are supplied by the caller (see
+  // useGame.js) rather than read off a ref owned here — see the file-top
+  // comment for why that tracking moved out of this hook.
+  const boardWon = useCallback(({ level, n, taps, lives, livesLostThisBoard, elapsedMs, trackLadder = true }) => {
     setStats((prev) => {
       const tierKey = String(n);
-      const nextStreak = prev.currentStreak + 1;
-      const nextFlawlessStreak = livesLostThisBoard === 0 ? prev.flawlessStreak + 1 : 0;
+      const flawless = livesLostThisBoard === 0;
       const nextClearsToday = prev.clearsToday + 1;
-      const next = withUnlocks({
-        ...prev,
-        best: Math.max(prev.best, level + 1),
+      let patch = {
         clearsToday: nextClearsToday,
         bestDayClears: Math.max(prev.bestDayClears, nextClearsToday),
         boardsCleared: prev.boardsCleared + 1,
         gamesPlayed: prev.gamesPlayed + 1,
         clearedByTier: { ...prev.clearedByTier, [tierKey]: (prev.clearedByTier[tierKey] || 0) + 1 },
         highestGridSize: Math.max(prev.highestGridSize, n),
-        currentStreak: nextStreak,
-        bestStreak: Math.max(prev.bestStreak, nextStreak),
-        flawlessStreak: nextFlawlessStreak,
-        bestFlawlessStreak: Math.max(prev.bestFlawlessStreak, nextFlawlessStreak),
-        flawlessClears: prev.flawlessClears + (livesLostThisBoard === 0 ? 1 : 0),
+        flawlessClears: prev.flawlessClears + (flawless ? 1 : 0),
         fewestTapsToClear: prev.fewestTapsToClear == null ? taps : Math.min(prev.fewestTapsToClear, taps),
         mostLivesRemainingOnClear: Math.max(prev.mostLivesRemainingOnClear, lives),
         narrowestWinLives: prev.narrowestWinLives == null ? lives : Math.min(prev.narrowestWinLives, lives),
         bestClearTimeMs: prev.bestClearTimeMs == null ? elapsedMs : Math.min(prev.bestClearTimeMs, elapsedMs),
-      });
+      };
+      if (trackLadder) {
+        const nextStreak = prev.currentStreak + 1;
+        const nextFlawlessStreak = flawless ? prev.flawlessStreak + 1 : 0;
+        patch = {
+          ...patch,
+          best: Math.max(prev.best, level + 1),
+          currentStreak: nextStreak,
+          bestStreak: Math.max(prev.bestStreak, nextStreak),
+          flawlessStreak: nextFlawlessStreak,
+          bestFlawlessStreak: Math.max(prev.bestFlawlessStreak, nextFlawlessStreak),
+        };
+      }
+      const next = withUnlocks({ ...prev, ...patch });
       persist(next);
       return next;
     });
   }, [persist]);
 
-  return { stats, boardStarted, tapped, boardLost, boardWon, reset };
+  return { stats, tapped, boardLost, boardWon, reset };
 }

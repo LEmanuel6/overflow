@@ -602,7 +602,16 @@ function seedFromString(str) {
 //    clock, not the reading load.
 //  - intermediate: matches the original single daily board's params.
 //  - expert/master: caps climb toward (but stay under) levelParams()'s
-//    ceiling of 42, so numbers stay readable under a multi-minute clock.
+//    ceiling (60 — see CAP_MAX_CEILING above; was 42 when this comment was
+//    first written), so numbers stay readable under a multi-minute clock.
+//    Master's capMax was bumped 34->50 after Leon noticed it read as low
+//    next to the deep-ladder numbers it's meant to evoke — bot-measured
+//    (simulate-difficulty.js-style greedy/careless win rate) to be a PURELY
+//    cosmetic change: 34 through 60 all land the same ~0-2% greedy win rate
+//    at this grid size (n=6) and capMin floor (4) — capMin, not capMax, is
+//    what actually drives difficulty here (see the capMin-vs-capMax note
+//    above the background curve), so the board isn't any harder, it just
+//    displays bigger numbers.
 //
 // Time limits HALVED from the original 20s/60s/180s/300s — Leon's explicit
 // call after playtesting found them too generous (rarely actually timing
@@ -617,7 +626,7 @@ const DAILY_DIFFICULTIES = {
   beginner:     { label: 'Beginner',     n: 3, ratio: 0.88, capMin: 6, capMax: 10, timeLimitMs: 10000 },
   intermediate: { label: 'Intermediate', n: 4, ratio: 0.88, capMin: 5, capMax: 20, timeLimitMs: 30000 },
   expert:       { label: 'Expert',       n: 5, ratio: 0.88, capMin: 5, capMax: 26, timeLimitMs: 90000 },
-  master:       { label: 'Master',       n: 6, ratio: 0.88, capMin: 4, capMax: 34, timeLimitMs: 150000 },
+  master:       { label: 'Master',       n: 6, ratio: 0.88, capMin: 4, capMax: 50, timeLimitMs: 150000 },
 };
 const DAILY_DIFFICULTY_ORDER = ['beginner', 'intermediate', 'expert', 'master'];
 

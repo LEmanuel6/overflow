@@ -39,7 +39,7 @@ function placeholderState(config) {
   };
 }
 
-export default function DailyChallengeScreen({ difficulty, dailyStatsApi, onBack }) {
+export default function DailyChallengeScreen({ difficulty, dailyStatsApi, statsApi, onBack }) {
   const theme = useTheme();
   const styles = useMemo(() => makeStyles(theme), [theme]);
   const insets = useSafeAreaInsets();
@@ -75,11 +75,36 @@ export default function DailyChallengeScreen({ difficulty, dailyStatsApi, onBack
     persistProgress: false,
     offerContinue: isRewardedAvailable(),
     regenerate: () => Engine.newDailyGame(dateStr, difficulty),
-    onWon: () => {
+    // Taps/bursts/chain-reactions are lifetime SKILL stats (Taps/Chain
+    // Reaction achievements) — counted here too, not just on the ladder.
+    // useGame.js tracks per-attempt lives-lost/timing privately per
+    // instance now, so this is safe: it can't touch the ladder's own
+    // (separate, always-alive) useGame instance.
+    onTapped: (info) => statsApi.tapped(info),
+    // trackLadder: false keeps this out of ladder-only concepts (best
+    // level, win streaks — see useStats.js's boardWon/boardLost) while
+    // still feeding the general lifetime counters (boardsCleared,
+    // flawlessClears, grid-size tiers, fastest clear, etc.) that most
+    // achievements actually read. `info` carries livesLostThisBoard from
+    // useGame.js's own per-instance tracker, for accurate flawless-clear
+    // detection; elapsedMs uses the countdown's own precise figure (it
+    // already accounts for rewarded bonus time) rather than useGame's
+    // generic Date.now() timer, since that's the more meaningful "how fast"
+    // for the Speedrunner achievement here.
+    onWon: (s, info) => {
       dailyStatsApi.recordResult(dateStr, difficulty, true, countdownRef.current.elapsedMs);
       submitDailyTime(difficulty, countdownRef.current.elapsedMs);
+      statsApi.boardWon({
+        n: s.n, taps: s.taps, lives: s.lives,
+        livesLostThisBoard: info.livesLostThisBoard,
+        elapsedMs: countdownRef.current.elapsedMs,
+        trackLadder: false,
+      });
     },
-    onLost: () => dailyStatsApi.recordResult(dateStr, difficulty, false, countdownRef.current.elapsedMs),
+    onLost: () => {
+      dailyStatsApi.recordResult(dateStr, difficulty, false, countdownRef.current.elapsedMs);
+      statsApi.boardLost({ trackLadder: false });
+    },
   });
 
   // Generates the real board once the placeholder has had a chance to paint.
@@ -95,13 +120,18 @@ export default function DailyChallengeScreen({ difficulty, dailyStatsApi, onBack
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Keeps running through g.busy (a cascade/wipe animating) on purpose —
+  // Leon's call: a big chain reaction should cost real time off the clock as
+  // part of its risk, not pause for free. useGame's forceTimeout defers
+  // actually applying an expiry that lands mid-animation until the board
+  // goes idle (see useGame.js), so this doesn't cut an animation short.
   const countdown = useCountdown(timeLimitMs, {
-    active: g.status === 'play' && !g.busy && !confirmingAbort,
+    active: g.status === 'play' && !confirmingAbort,
     onExpire: g.forceTimeout,
   });
   countdownRef.current = countdown;
 
-  const { state, display, bursting, wiping, revealing, boardId, status, tap } = g;
+  const { state, display, bursting, wiping, revealing, boardId, status, tap, displayLives } = g;
 
   const handleRetry = () => { setAdNotice(null); g.retry(); countdown.reset(); };
 
@@ -162,9 +192,9 @@ export default function DailyChallengeScreen({ difficulty, dailyStatsApi, onBack
         ) : (
           <>
             <Hud
-              lives={state.lives}
+              lives={displayLives}
               maxLives={Engine.livesForGrid(config.n)}
-              streak={diffStats.currentStreak}
+              boardId={boardId}
               firstLabel="Time"
               firstValue={formatClock(countdown.remainingMs)}
               danger={countdown.remainingMs <= dangerThresholdMs(timeLimitMs)}

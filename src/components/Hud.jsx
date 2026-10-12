@@ -1,39 +1,123 @@
-import React, { useMemo } from 'react';
-import { View, Text, StyleSheet } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import React, { useMemo, useRef, useState, useEffect } from 'react';
+import { View, Text, StyleSheet, Animated, Easing } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useTheme } from '../theme';
 import { MAX_LIVES } from '../engine';
 
+// Tuned so a single life lost (~a 10-slot bar's smallest step) reads as a
+// quick, snappy move, while a multi-burst chain (several lives at once —
+// see below) takes proportionally longer rather than covering a much bigger
+// distance at the same speed. Clamped at both ends: a floor so even a
+// 1-life move doesn't feel instant/twitchy, a ceiling so a huge chain on a
+// big grid doesn't stall the bar for a very long time.
+const FILL_MS_PER_LIFE = 220;
+const FILL_MIN_DURATION = 180;
+const FILL_MAX_DURATION = 900;
+
+// `streak` is omitted entirely (not just zeroed) by the daily challenge —
+// Leon's call: a "consecutive wins" stat doesn't make sense there, since
+// the daily challenge is one attempt-able board per difficulty per day, not
+// a session of consecutive board clears the way the ladder is. Only the
+// ladder (GameScreen) still passes it, so the row renders 2 stats for daily,
+// 3 for the ladder.
+//
 // `firstLabel`/`firstValue`/`danger` let the daily challenge reuse this same
-// 3-stat layout with a countdown in place of the level number (e.g.
+// stat-row layout with a countdown in place of the level number (e.g.
 // firstLabel="Time" firstValue={formatClock(remainingMs)}) — both default to
 // today's exact ladder output when omitted. `maxLives` defaults to the 3x3
 // count too, but callers should pass `Engine.livesForGrid(state.n)` since
-// lives now scale with grid size (5 at 4x4, 7 at 5x5, 10 at 6x6).
-export default function Hud({ level, lives, streak, firstLabel = 'Level', firstValue, danger, maxLives = MAX_LIVES }) {
+// the underlying capacity still scales with grid size (5 at 4x4, 7 at 5x5,
+// 10 at 6x6) — only the visual (a fill bar, not a heart row) and its label
+// changed; the mechanic underneath (lose at full) is untouched.
+//
+// "Lives" never really fit a game about cells overflowing their cap — this
+// reads instead as the player's own overflow meter: it fills as bursts
+// drain `lives`, same capacity per grid size, same lose-at-full condition,
+// just framed as accumulating damage rather than depleting a pool. Leon's
+// explicit redesign call, not a renaming of the underlying engine/stats
+// code (`lives`, `MAX_LIVES`, `livesForGrid` etc. all keep their names —
+// only this HUD's label and visual changed).
+//
+// The gradient is a fixed-size green->amber->red strip (theme's existing
+// ok/signal/burst colours — already used elsewhere for safe/at-cap/bursting,
+// so this reuses the app's own established colour meaning rather than
+// inventing a new one) spanning the bar's full measured width, REVEALED by
+// a same-coloured-as-empty-track cover shrinking from the right as the bar
+// fills — not a gradient recomputed/stretched to the current fill. That's
+// what makes it a "reveal": the colour at any given fill level always
+// matches that position's true stop on the full green->red strip, rather
+// than the visible portion restretching across the whole range every tick.
+//
+// The cover's width is Animated, not a plain style number — `lives` arrives
+// from useGame already post-cascade (a multi-burst chain updates it ONCE,
+// after all its bursts resolve, see tap() in useGame.js), so animating
+// straight from the old fill to the new one is naturally a single eased
+// move covering however many lives were lost, never a hop per burst. The
+// ease-in/ease-out curve (Easing.inOut) is what gives it the "speeds up,
+// then slows back down" feel on approach to its new resting spot, rather
+// than a constant-speed slide. `boardId` changing (or `maxLives`, e.g. a
+// grid-size change) means a brand-new board — that resets the bar to empty
+// instantly, never an animated "heal" back down from wherever it was.
+export default function Hud({ level, lives, streak, firstLabel = 'Level', firstValue, danger, maxLives = MAX_LIVES, boardId }) {
   const theme = useTheme();
   const styles = useMemo(() => makeStyles(theme), [theme]);
   const firstV = firstValue != null ? firstValue : String(level);
-  // Icon size/spacing shrink once there are more hearts than the original
-  // 3x3 layout was designed for, so a 10-heart 6x6 row still fits.
-  const heartSize = maxLives > 8 ? 13 : maxLives > 5 ? 16 : 20;
-  const heartGap = maxLives > 8 ? 1 : 2;
+  const [barWidth, setBarWidth] = useState(0);
+  const fillFraction = maxLives > 0 ? Math.max(0, Math.min(1, (maxLives - lives) / maxLives)) : 0;
+
+  const fillAnim = useRef(new Animated.Value(fillFraction)).current;
+  const prevRef = useRef({ fillFraction, maxLives, boardId, mounted: false });
+
+  useEffect(() => {
+    const prev = prevRef.current;
+    if (!prev.mounted) {
+      prevRef.current = { fillFraction, maxLives, boardId, mounted: true };
+      return;
+    }
+    const isNewBoard = boardId !== prev.boardId || maxLives !== prev.maxLives;
+    if (isNewBoard) {
+      fillAnim.setValue(fillFraction);
+    } else {
+      const livesMoved = Math.round(Math.abs(fillFraction - prev.fillFraction) * maxLives);
+      const duration = Math.min(FILL_MAX_DURATION, Math.max(FILL_MIN_DURATION, livesMoved * FILL_MS_PER_LIFE));
+      Animated.timing(fillAnim, {
+        toValue: fillFraction,
+        duration,
+        easing: Easing.inOut(Easing.quad),
+        useNativeDriver: false, // animating `width` — not supported by the native driver
+      }).start();
+    }
+    prevRef.current = { fillFraction, maxLives, boardId, mounted: true };
+  }, [fillFraction, maxLives, boardId, fillAnim]);
+
+  const coverWidth = barWidth > 0
+    ? fillAnim.interpolate({ inputRange: [0, 1], outputRange: [barWidth, 0] })
+    : 0;
+
   return (
     <View style={styles.row}>
       <Stat styles={styles} k={firstLabel} v={firstV} danger={danger} />
-      <Stat styles={styles} k="Streak" v={String(streak)} />
+      {streak != null && <Stat styles={styles} k="Streak" v={String(streak)} />}
       <View style={styles.stat}>
-        <Text style={styles.k}>Lives</Text>
-        <View style={styles.hearts}>
-          {Array.from({ length: maxLives }, (_, i) => (
-            <Ionicons
-              key={i}
-              name={i < lives ? 'heart' : 'heart-outline'}
-              size={heartSize}
-              color={i < lives ? theme.color.heart : theme.color.vesselEdge}
-              style={[styles.heart, { marginHorizontal: heartGap }]}
-            />
-          ))}
+        <Text style={styles.k}>Overflow</Text>
+        <View style={styles.track} onLayout={(e) => setBarWidth(e.nativeEvent.layout.width)}>
+          {barWidth > 0 && (
+            <>
+              <LinearGradient
+                colors={[theme.color.ok, theme.color.signal, theme.color.burst]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={{ position: 'absolute', left: 0, top: 0, width: barWidth, height: '100%' }}
+              />
+              <Animated.View
+                style={{
+                  position: 'absolute', top: 0, right: 0, height: '100%',
+                  width: coverWidth,
+                  backgroundColor: theme.color.vesselEdge,
+                }}
+              />
+            </>
+          )}
         </View>
       </View>
     </View>
@@ -56,7 +140,10 @@ function makeStyles(theme) {
     k: { fontFamily: theme.font.semiBold, fontSize: 14, color: theme.color.inkSoft, textTransform: 'uppercase', letterSpacing: 1 },
     v: { fontFamily: theme.font.bold, fontSize: 22, color: theme.color.ink, marginTop: 2 },
     vDanger: { color: theme.color.burst },
-    hearts: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', marginTop: 4, maxWidth: 120 },
-    heart: { marginVertical: 1 },
+    track: {
+      width: '100%', maxWidth: 110, height: 14, marginTop: 6,
+      borderRadius: theme.radius, overflow: 'hidden',
+      backgroundColor: theme.color.vesselEdge,
+    },
   });
 }

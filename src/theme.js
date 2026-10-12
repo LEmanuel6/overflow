@@ -34,7 +34,6 @@ const darkColor = {
   burstSoft: '#3D211A',
   ok: '#4FAE8D',           // green — pushes nothing / safe
   okSoft: '#1D3129',
-  heart: '#E2593C',
 };
 
 const lightColor = {
@@ -51,7 +50,6 @@ const lightColor = {
   burstSoft: '#F0D6CE',
   ok: '#2E6B57',
   okSoft: '#D8E7DF',
-  heart: '#A4331D',
 };
 
 export const darkTheme = { ...shared, mode: 'dark', color: darkColor };

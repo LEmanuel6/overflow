@@ -20,7 +20,8 @@
       },
       "package": "com.leonemanuel.overflow",
       "backgroundColor": "#1B1A17",
-      "allowBackup": false
+      "allowBackup": false,
+      "versionCode": 2
     },
     "web": {
       "favicon": "./assets/favicon.png"

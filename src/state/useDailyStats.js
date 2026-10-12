@@ -23,9 +23,6 @@ function makeDefaultDifficultyStats() {
     totalLosses: 0,
     daysWon: 0,                // distinct calendar days first-solved — "challenges completed"
     bestTimeMs: null,        // fastest WINNING time, any day, ever
-    currentStreak: 0,        // consecutive calendar days with >=1 win
-    bestStreak: 0,
-    lastWinDate: null,
     days: {},                // { [dateStr]: { attempts, won, bestTimeMs, winAttempt } }
   };
 }
@@ -61,12 +58,6 @@ function withDailyUnlocks(next) {
 // nobody checks at a specific hour.
 export function localDateStr(d = new Date()) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
-
-function dayBefore(dateStr) {
-  const [y, m, d] = dateStr.split('-').map(Number);
-  const prev = new Date(y, m - 1, d - 1);
-  return localDateStr(prev);
 }
 
 // Sum of attempts across every difficulty for one calendar day — what the
@@ -126,12 +117,6 @@ export function useDailyStats() {
       // beat your time) don't change "how many attempts it took to solve".
       const winAttempt = isFirstWin ? nextAttempts : prevDay.winAttempt;
 
-      let { currentStreak, lastWinDate } = prevDiff;
-      if (isFirstWin) {
-        currentStreak = prevDiff.lastWinDate === dayBefore(dateStr) ? prevDiff.currentStreak + 1 : 1;
-        lastWinDate = dateStr;
-      }
-
       const cutoff = new Date();
       cutoff.setDate(cutoff.getDate() - DAYS_RETENTION);
       const cutoffStr = localDateStr(cutoff);
@@ -145,9 +130,6 @@ export function useDailyStats() {
         totalLosses: prevDiff.totalLosses + (won ? 0 : 1),
         daysWon: prevDiff.daysWon + (isFirstWin ? 1 : 0),
         bestTimeMs: won ? (prevDiff.bestTimeMs == null ? timeMs : Math.min(prevDiff.bestTimeMs, timeMs)) : prevDiff.bestTimeMs,
-        currentStreak,
-        bestStreak: Math.max(prevDiff.bestStreak, currentStreak),
-        lastWinDate,
         days: nextDays,
       };
       const next = withDailyUnlocks({ ...prev, difficulties: { ...prev.difficulties, [difficulty]: nextDiff } });
