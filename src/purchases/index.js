@@ -26,8 +26,8 @@ try {
 
 // RevenueCat PUBLIC SDK keys (Project settings -> API keys): Google Play
 // "goog_...", App Store "appl_...". Public by design — they ship in the app.
-const REVENUECAT_KEYS = { android: null, ios: null };
-const ENTITLEMENT_ID = 'no_ads';
+const REVENUECAT_KEYS = { android: 'goog_ADuuevOzxQkPOtWtPTTbGnJSkaC', ios: null };
+const ENTITLEMENT_ID = 'overflow_pro';
 
 const apiKey = REVENUECAT_KEYS[Platform.OS];
 const live = !!(Purchases && apiKey);

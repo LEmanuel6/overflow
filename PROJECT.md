@@ -300,7 +300,7 @@ again" at the same level.
 - **One-time "Remove ads" purchase (`src/purchases/`, RevenueCat).** Removes
   the banner and the level-clear interstitials only — Leon chose to KEEP the
   rewarded continue / extra-time ads as optional (so consent + the ads SDK
-  still run for buyers). Entitlement id `no_ads`; the last known value is
+  still run for buyers). Entitlement id `overflow_pro`; the last known value is
   cached in AsyncStorage (`overflow:iap:v1`) so offline launches still know a
   buyer, and RevenueCat overwrites it whenever reachable (handles refunds).
   `purchasesReady` is awaited before any banner/interstitial decision so a
@@ -309,7 +309,7 @@ again" at the same level.
   aren't configured. In `__DEV__` without keys/native module a local stub
   "buys" instantly (Settings shows a "clear test purchase" link). **To go
   live:** create the product in Play Console (needs a build uploaded first) /
-  App Store Connect, add it + entitlement `no_ads` to a RevenueCat offering,
+  App Store Connect, add it + entitlement `overflow_pro` to a RevenueCat offering,
   link the Play service-account key, then paste the PUBLIC SDK keys into
   `REVENUECAT_KEYS` in `src/purchases/index.js`. Price is set in the store
   consoles, not in code (Apple only offers tiers, so £4.99 rather than £5.00).
