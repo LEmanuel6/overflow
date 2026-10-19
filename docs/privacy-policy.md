@@ -44,9 +44,15 @@ The app does not currently include third-party analytics or crash-reporting serv
 
 Overflow is not directed at children under 13 (or under 16 in the European Economic Area), and we do not knowingly collect personal information from children. If you believe a child has provided personal information through the app, contact us at the address above.
 
-## Data retention and your rights
+## Data retention and your rights, including requesting deletion
 
-We do not hold personal information about you, so there is nothing for us to retain, export, or delete on our side. For data held by Google for advertising, you can exercise your rights (access, deletion, objection, and similar rights available under laws such as the GDPR and CCPA) through Google's own privacy tools at <https://myaccount.google.com/data-and-privacy>.
+The app has no accounts, so there is no account-linked data on our side to begin with. Depending on what you want deleted:
+
+- **Game progress, stats, and settings** (stored only on your device): uninstalling the app erases this immediately.
+- **Advertising data** held by Google (advertising identifier, ad interaction data): you can access, delete, or object to this directly through Google's own privacy tools at <https://myaccount.google.com/data-and-privacy>.
+- **Purchase record** held by RevenueCat (an anonymous app user identifier and purchase status): email us at leon.emanuel123@gmail.com to request this be deleted, and we will have it removed.
+
+These cover every category of data described in this policy. Rights such as access, deletion, and objection under laws like the GDPR and CCPA apply to the above as described.
 
 ## Changes to this policy
 
