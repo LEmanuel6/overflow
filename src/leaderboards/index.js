@@ -43,12 +43,12 @@ const live = !!GooglePlayGames && Platform.OS === 'android';
 // Leaderboards). Left null until Play Games Services is set up there —
 // every call is a safe no-op until then, same placeholder pattern as
 // REAL_UNIT_IDS in src/ads and REVENUECAT_KEYS in src/purchases.
-const LEVEL_LEADERBOARD_ID = null;
+const LEVEL_LEADERBOARD_ID = 'CgkIwbv7iL4GEAIQAQ';
 const DAILY_LEADERBOARD_IDS = {
-  beginner: null,
-  intermediate: null,
-  expert: null,
-  master: null,
+  beginner: 'CgkIwbv7iL4GEAIQAg',
+  intermediate: 'CgkIwbv7iL4GEAIQAw',
+  expert: 'CgkIwbv7iL4GEAIQBA',
+  master: 'CgkIwbv7iL4GEAIQBQ',
 };
 
 export function isLeaderboardsAvailable() {
