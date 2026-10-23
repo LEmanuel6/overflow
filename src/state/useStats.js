@@ -97,8 +97,32 @@ function withUnlocks(next) {
 
 export function useStats() {
   const [stats, setStats] = useState(DEFAULT_STATS);
+  // FIFO of achievement ids newly unlocked by a LIVE update (a tap, a win, a
+  // loss) — detected below by comparing stats.unlockedAt across renders, NOT
+  // by reading a variable set inside the setStats updater right after
+  // calling it (a functional setState updater isn't guaranteed to run
+  // synchronously — React can defer it to the actual render pass — so that
+  // approach silently never fired). suppressNextUnlockRef skips the one
+  // unlockedAt change caused by the initial-load effect's own reconciliation
+  // (which can "newly" stamp an achievement that was actually earned in a
+  // past session) — that's backfill, not a moment to toast. App.js drains
+  // this into its own toast queue (see useAchievementToastQueue) and calls
+  // clearJustUnlocked after.
+  const [justUnlocked, setJustUnlocked] = useState([]);
+  const clearJustUnlocked = useCallback(() => setJustUnlocked([]), []);
+  const prevUnlockedAtRef = useRef(DEFAULT_STATS.unlockedAt);
+  const suppressNextUnlockRef = useRef(false);
   const loadedRef = useRef(false);
   const sessionStartRef = useRef(Date.now());
+
+  useEffect(() => {
+    const prevUnlockedAt = prevUnlockedAtRef.current;
+    prevUnlockedAtRef.current = stats.unlockedAt;
+    if (stats.unlockedAt === prevUnlockedAt) return;
+    if (suppressNextUnlockRef.current) { suppressNextUnlockRef.current = false; return; }
+    const newIds = Object.keys(stats.unlockedAt).filter((id) => !(id in prevUnlockedAt));
+    if (newIds.length) setJustUnlocked((q) => [...q, ...newIds]);
+  }, [stats.unlockedAt]);
 
   const persist = useCallback((next) => {
     AsyncStorage.setItem(STORE_KEY, JSON.stringify(next)).catch(() => {});
@@ -148,6 +172,7 @@ export function useStats() {
         bestDayStreak: Math.max(loaded.bestDayStreak, dayStreak),
       });
       loadedRef.current = true;
+      suppressNextUnlockRef.current = true;
       setStats(next);
       persist(next);
     })();
@@ -176,6 +201,7 @@ export function useStats() {
   const reset = useCallback(() => {
     setStats(DEFAULT_STATS);
     persist(DEFAULT_STATS);
+    setJustUnlocked([]);
   }, [persist]);
 
   // Taps/bursts/chain-reactions are general skill stats (what the Taps and
@@ -254,5 +280,5 @@ export function useStats() {
     });
   }, [persist]);
 
-  return { stats, tapped, boardLost, boardWon, reset };
+  return { stats, tapped, boardLost, boardWon, reset, justUnlocked, clearJustUnlocked };
 }

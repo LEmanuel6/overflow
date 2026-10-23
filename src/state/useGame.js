@@ -15,9 +15,10 @@
 // hand it the right numbers at the right times via `display`/`boardId`.
 
 import { useState, useRef, useCallback, useEffect } from 'react';
-import * as Haptics from 'expo-haptics';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Engine from '../engine';
+import { playTap, playBurst, playSweepTick } from '../sound';
+import { impactLight, impactMedium, impactHeavy, notifySuccess, notifyError } from '../haptics';
 
 const STORE_KEY = 'overflow:v1';
 
@@ -152,6 +153,12 @@ export function useGame(statsApi, opts = {}) {
     // the initial board created above counts as "begun" too
     livesLostThisBoardRef.current = 0;
     boardStartTimeRef.current = Date.now();
+    // Silent specifically when persistProgress is true (the ladder): that
+    // instance is created once, unconditionally, in App.js at app launch —
+    // this effect always fires while the player is sitting on the Menu
+    // screen (screen state starts there), never while Game is actually
+    // visible. The daily challenge's instance (persistProgress: false) only
+    // mounts because the player navigated to it, so it stays audible.
     if (!persistProgress) {
       runBoardReveal(state.n);
       return () => timers.current.forEach(clearTimeout);
@@ -169,7 +176,7 @@ export function useGame(statsApi, opts = {}) {
             setBoardId((id) => id + 1);
             livesLostThisBoardRef.current = 0;
             boardStartTimeRef.current = Date.now();
-            runBoardReveal(g.n);
+            runBoardReveal(g.n, { silent: true });
             loadedSaved = true;
           }
         }
@@ -177,7 +184,7 @@ export function useGame(statsApi, opts = {}) {
       // no saved level to load — reveal the default level-1 board created
       // above instead, so its cells' outlines aren't stuck on the neutral
       // colour for the whole first level (see Cell.jsx's `settled` check).
-      if (!loadedSaved) runBoardReveal(state.n);
+      if (!loadedSaved) runBoardReveal(state.n, { silent: true });
     })();
     return () => timers.current.forEach(clearTimeout);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -193,7 +200,7 @@ export function useGame(statsApi, opts = {}) {
 
   const settleWin = useCallback((wonState) => {
     setStatus('won');
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+    notifySuccess();
     onWon(wonState, {
       livesLostThisBoard: livesLostThisBoardRef.current,
       elapsedMs: Date.now() - boardStartTimeRef.current,
@@ -202,7 +209,7 @@ export function useGame(statsApi, opts = {}) {
 
   const settleLoss = useCallback(() => {
     setStatus('lost');
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => {});
+    notifyError();
     if (offerContinue && !continueUsedRef.current) pendingLossRef.current = true;
     else onLost();
   }, [onLost, offerContinue]);
@@ -220,6 +227,7 @@ export function useGame(statsApi, opts = {}) {
     keys.forEach((band, k) => {
       after(k * stagger, () => {
         setWiping((w) => [...w, ...bands.get(band)]);
+        playSweepTick();
       });
     });
 
@@ -235,13 +243,19 @@ export function useGame(statsApi, opts = {}) {
   // Sweep a freshly-loaded board in, same diagonal wave as the wipe but in
   // reverse (arriving instead of leaving). Cell.jsx starts a fresh board's
   // cells hidden (see its boardId effect) and fades each one in as its index
-  // is added here.
-  const runBoardReveal = useCallback((n) => {
+  // is added here. `silent` skips the per-band tick sound — used when
+  // retry()/restart() etc. are resetting the board as a side effect of the
+  // player LEAVING the screen (abort-to-menu), not watching it: GameScreen
+  // stays mounted (display:none) when not the active tab, so this reveal
+  // still runs invisibly in the background either way, but without `silent`
+  // it would also play an audible sweep for an animation nobody can see.
+  const runBoardReveal = useCallback((n, { silent = false } = {}) => {
     setRevealing([]);
     const { bands, keys, stagger } = diagonalBands(n * n, n, REVEAL_STAGGER_MAX, REVEAL_TOTAL_TARGET);
     keys.forEach((band, k) => {
       after(k * stagger, () => {
         setRevealing((r) => [...r, ...bands.get(band)]);
+        if (!silent) playSweepTick();
       });
     });
   }, []);
@@ -254,7 +268,8 @@ export function useGame(statsApi, opts = {}) {
 
     onTapped({ bursts: res.bursts, livesLost: res.livesLost || 0 });
     livesLostThisBoardRef.current += res.livesLost || 0;
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+    impactLight();
+    playTap();
 
     // clean tap, no cascade
     if (!res.bursts.length) {
@@ -279,11 +294,8 @@ export function useGame(statsApi, opts = {}) {
       after(stepStart + RISE_HOLD, () => {
         setBursting((b) => [...b, idx]);
         setDisplayLives((l) => Math.max(0, l - 1)); // this exact burst is the life spent
-        Haptics.impactAsync(
-          k === res.bursts.length - 1 && res.result === 'lost'
-            ? Haptics.ImpactFeedbackStyle.Heavy
-            : Haptics.ImpactFeedbackStyle.Medium
-        ).catch(() => {});
+        (k === res.bursts.length - 1 && res.result === 'lost' ? impactHeavy : impactMedium)();
+        playBurst();
       });
       after(stepStart + BURST_STEP, () => {
         setDisplay(res.frames[k].slice());
@@ -311,14 +323,17 @@ export function useGame(statsApi, opts = {}) {
   }, [state, busy, status, runWinWipe, settleLoss, onTapped]);
 
   // --- controls -------------------------------------------------------------
-  const retry = useCallback(() => {
+  // `silent` forwards to runBoardReveal — see its comment. Used when a
+  // caller is resetting the board as a side effect of leaving the screen,
+  // not an in-view "Try again" tap.
+  const retry = useCallback(({ silent = false } = {}) => {
     clearTimers();
     beginBoard();
     const g = (regenerate || Engine.retry)(state);
     setState(g); setDisplay(g.cells); setBursting([]); setWiping([]); setStatus('play'); setBusy(false);
     setDisplayLives(g.lives);
     setBoardId((id) => id + 1);
-    runBoardReveal(g.n);
+    runBoardReveal(g.n, { silent });
   }, [state, regenerate, runBoardReveal, beginBoard]);
 
   // External forced loss (e.g. a daily-challenge countdown hitting zero) —
@@ -344,6 +359,9 @@ export function useGame(statsApi, opts = {}) {
     settleLoss();
   }, [busy, status, state, settleLoss]);
 
+  // Only ever called from the Menu screen's Reset button — GameScreen is
+  // never the visible tab when this fires, so always silent: nobody's ever
+  // watching this particular reveal.
   const restart = useCallback(() => {
     clearTimers();
     beginBoard();
@@ -352,12 +370,13 @@ export function useGame(statsApi, opts = {}) {
     setDisplayLives(g.lives);
     setBoardId((id) => id + 1);
     persist(1);
-    runBoardReveal(g.n);
+    runBoardReveal(g.n, { silent: true });
   }, [persist, runBoardReveal, beginBoard]);
 
-  // Advance from a cleared board to the next level (called from the "Continue"
-  // prompt, not automatic — Leon wants a deliberate step, not an auto-advance).
-  const continueNext = useCallback(() => {
+  // Advance from a cleared board to the next level — auto-triggered on a
+  // win now (see GameScreen's auto-advance effect), or forced early by
+  // backing out right after a win (silent: true there — see its call site).
+  const continueNext = useCallback(({ silent = false } = {}) => {
     clearTimers();
     beginBoard();
     const ng = Engine.nextLevel(state);
@@ -365,7 +384,7 @@ export function useGame(statsApi, opts = {}) {
     setDisplayLives(ng.lives);
     setBoardId((id) => id + 1);
     persist(ng.level);
-    runBoardReveal(ng.n);
+    runBoardReveal(ng.n, { silent });
   }, [state, persist, runBoardReveal, beginBoard]);
 
   // Dev-only: jump straight to an arbitrary level, to test a specific
@@ -406,11 +425,37 @@ export function useGame(statsApi, opts = {}) {
 
   const canContinue = offerContinue && status === 'lost' && !continueUsed;
 
+  // Replays the reveal sweep (+ its sound) for the CURRENT board, without
+  // regenerating anything. For the ladder, GameScreen actually unmounts/
+  // remounts on every navigation away from and back to the 'game' tab
+  // (unlike Menu/Stats/etc., which stay mounted via display:none) — but
+  // this hook's state is lifted to App.js, so the board itself persists
+  // across that. Without this, the board's entrance animation only ever
+  // played once (whenever it was silently generated in the background) and
+  // never again on return visits, even though the player's now actually
+  // looking at it for the first time this visit. Called from GameScreen's
+  // own mount effect — guarded to a genuinely in-progress board (status
+  // 'play'), so it doesn't sweep in behind the won/lost prompts.
+  //
+  // bumps boardId even though the board DATA isn't changing — Cell.jsx only
+  // hides itself (ready to animate back in) when ITS boardId prop changes;
+  // without that bump every cell was already sitting at full opacity from
+  // the earlier (silent) reveal, so runBoardReveal had nothing actually
+  // hidden left to sweep in. Confirmed harmless elsewhere: the interstitial-
+  // ad and auto-advance effects both key off boardId too, but only act when
+  // status is 'won', and this only ever runs while status is 'play'.
+  const replayReveal = useCallback(() => {
+    if (status !== 'play') return;
+    clearTimers();
+    setBoardId((id) => id + 1);
+    runBoardReveal(state.n);
+  }, [status, state.n, runBoardReveal]);
+
   return {
     state, display, bursting, wiping, revealing, busy, status, boardId,
     displayLives,
     tap, retry, restart, continueNext, forceTimeout, goToLevel,
-    canContinue, reviveAfterLoss,
+    canContinue, reviveAfterLoss, replayReveal,
     // rendering hints
     isGreen: (v) => Engine.isGreen(v, state.ratio),
   };

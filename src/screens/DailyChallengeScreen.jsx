@@ -8,7 +8,7 @@ import Hud from '../components/Hud';
 import ConfirmDialog from '../components/ConfirmDialog';
 import { useGame } from '../state/useGame';
 import { useCountdown } from '../state/useCountdown';
-import { localDateStr } from '../state/useDailyStats';
+import { dailyDateStr } from '../state/useDailyStats';
 import { formatClock, formatTimeMs } from '../utils/format';
 import { isRewardedAvailable, showRewarded } from '../ads';
 import { submitDailyTime } from '../leaderboards';
@@ -47,7 +47,7 @@ export default function DailyChallengeScreen({ difficulty, dailyStatsApi, statsA
   const config = Engine.DAILY_DIFFICULTIES[difficulty];
   const timeLimitMs = config.timeLimitMs;
 
-  const [dateStr] = useState(() => localDateStr());   // captured once per mount
+  const [dateStr] = useState(() => dailyDateStr());   // captured once per mount
   const [confirmingAbort, setConfirmingAbort] = useState(false);
   const [adBusy, setAdBusy] = useState(false);
   const [adNotice, setAdNotice] = useState(null);

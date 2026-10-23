@@ -347,11 +347,15 @@ again" at the same level.
     ms = better, submitted on every daily win (`DailyChallengeScreen`). Play
     Games' own leaderboard UI has a built-in Today/This Week/All Time toggle,
     so a single persistent leaderboard doubles as "today's" board with zero
-    extra plumbing — the one known gap is that Google's "Today" boundary is
-    its own (likely UTC), not the local-midnight boundary the rest of the
-    Daily Challenge already uses (see `useDailyStats.js`'s `localDateStr`),
-    so a player right around midnight could see a mismatch. Accepted as
-    minor, non-blocking.
+    extra plumbing. This used to have a known gap — Google's "Today" boundary
+    resets at a fixed UTC-7 (Play Games' own convention, held year-round with
+    no DST shift) while the Daily Challenge used each player's own local
+    midnight, so a player near midnight could see a mismatch between which
+    puzzle they solved and which leaderboard window it landed in. Fixed:
+    `useDailyStats.js`'s day boundary (`dailyDateStr`, renamed from
+    `localDateStr`) now anchors to that same fixed UTC-7 instant for every
+    player, everywhere — the tradeoff being the puzzle no longer changes at
+    each player's own local midnight (e.g. 7-8am local for a UK player).
   - **No custom config plugin shipped by the library** — `plugins/withPlayGames.js`
     was written from scratch (same shape as `react-native-google-mobile-ads`'s
     bundled plugin) to inject the Play Games `APP_ID` into

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, Pressable, StyleSheet } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -15,8 +15,8 @@ import { showRewarded, showInterstitial } from '../ads';
 // ad shouldn't land before a player's formed a good first impression —
 // tightening to every 7th from L101 on, once a player's demonstrably
 // engaged and later levels take longer anyway. It can't be dodged by
-// tapping Menu: the win buttons stay disabled until the ad closes. Never
-// mid-board.
+// backing out: auto-advance (below) waits for the ad to resolve before
+// moving to the next board. Never mid-board.
 const INTERSTITIAL_TUTORIAL_BAND_END = 100;
 const INTERSTITIAL_EVERY_LEVELS_EARLY = 10;
 const INTERSTITIAL_EVERY_LEVELS_LATE = 7;
@@ -27,7 +27,7 @@ function isInterstitialLevel(level) {
 }
 
 export default function GameScreen({ g, stats, onMenu }) {
-  const { state, display, bursting, wiping, revealing, boardId, status, tap, retry, continueNext, canContinue, reviveAfterLoss, displayLives } = g;
+  const { state, display, bursting, wiping, revealing, boardId, status, tap, retry, continueNext, canContinue, reviveAfterLoss, displayLives, replayReveal } = g;
   const theme = useTheme();
   const styles = useMemo(() => makeStyles(theme), [theme]);
   const insets = useSafeAreaInsets();
@@ -35,16 +35,57 @@ export default function GameScreen({ g, stats, onMenu }) {
   const [adBusy, setAdBusy] = useState(false);
   const [adNotice, setAdNotice] = useState(null);
 
+  // GameScreen itself unmounts/remounts on every navigation away from and
+  // back to this tab (it's conditionally rendered in App.js, not kept
+  // mounted via display:none like Menu/Stats/etc.) — so this is the one
+  // moment that reliably means "the player just navigated here." Replays
+  // the board's entrance sweep (+ sound) for whatever's already sitting in
+  // `g`, which persists across that unmount since it's lifted to App.js.
+  //
+  // useLayoutEffect, not useEffect — this needs to hide the board (via the
+  // boardId bump inside replayReveal, see useGame.js) BEFORE the browser/
+  // native paints the first frame. A plain useEffect runs AFTER that first
+  // paint, so the already-fully-visible board would flash on screen for one
+  // frame, THEN snap blank, THEN sweep back in — exactly the "goes blank to
+  // re-appear" glitch this was built to fix. useLayoutEffect applies the
+  // hide before anything is actually painted, so the very first frame the
+  // player sees is already hidden, with only the intended sweep-in visible.
+  useLayoutEffect(() => { replayReveal(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Fires once per cleared board. adShownForBoard guards against re-firing if
   // this screen remounts while the board is still in its 'won' state.
   const adShownForBoard = useRef(null);
+  // Synchronous mirror of adBusy — the auto-advance effect below needs to
+  // know an interstitial has been claimed for THIS board the instant this
+  // effect runs, not one render later (state updates from setAdBusy(true)
+  // aren't visible to a same-commit effect declared after this one; a ref
+  // write is). Without this, auto-advance could race ahead of the ad on the
+  // very first 'won' render, before adBusy has actually flipped to true.
+  const adBusyRef = useRef(false);
   useEffect(() => {
     if (status !== 'won' || !isInterstitialLevel(state.level)) return;
     if (adShownForBoard.current === boardId) return;
     adShownForBoard.current = boardId;
+    adBusyRef.current = true;
     setAdBusy(true);
-    showInterstitial().then(() => setAdBusy(false)); // always resolves
+    showInterstitial().then(() => { adBusyRef.current = false; setAdBusy(false); }); // always resolves
   }, [status, boardId, state.level]);
+
+  // Auto-advance on a win — Leon's call: tapping Continue every single
+  // board felt like an interruption, not a deliberate checkpoint. Reuses
+  // the exact sweep-out (runWinWipe) / sweep-in (runBoardReveal) animations
+  // that already existed for the manual Continue flow, just chained
+  // automatically instead of waiting on a tap. Declared AFTER the ad effect
+  // above (effect order = declaration order within a commit) so adBusyRef
+  // is already up to date by the time this one reads it.
+  const autoAdvancedForBoard = useRef(null);
+  useEffect(() => {
+    if (status !== 'won') return;
+    if (autoAdvancedForBoard.current === boardId) return;
+    if (adBusyRef.current) return; // interstitial claimed this board — the adBusy->false render re-runs this
+    autoAdvancedForBoard.current = boardId;
+    continueNext();
+  }, [status, adBusy, boardId, continueNext]);
 
   const banner =
     status === 'won' ? `Level ${state.level} cleared` :
@@ -65,20 +106,28 @@ export default function GameScreen({ g, stats, onMenu }) {
 
   const handleAbort = () => {
     setConfirmingAbort(false);
-    retry();
+    retry({ silent: true }); // resetting as a side effect of leaving, not an in-view retry — no sweep sound for an animation nobody's watching
     onMenu();
   };
 
   // Once the board's already resolved there's nothing left to lose, so the
-  // "you'll lose progress" confirm doesn't apply — and for a win, retry()
-  // would actually have DISCARDED the win (it regenerates the SAME level
-  // rather than advancing), which is exactly the bug this guards against.
-  // A win mirrors the Menu button exactly (advance to the next level in the
-  // background, then leave) rather than just leaving the won board sitting
-  // there unresolved for next time.
+  // "you'll lose progress" confirm doesn't apply. For a win, retry() would
+  // actually have DISCARDED the win (it regenerates the SAME level rather
+  // than advancing) — mirrors what auto-advance would do anyway (advance to
+  // the next level in the background, then leave); marking
+  // autoAdvancedForBoard first stops the auto-advance effect from ALSO
+  // firing for this boardId and double-advancing past an extra level. For a
+  // loss, silently retry the same level in the background before leaving —
+  // Leon's call: coming back later should land on a fresh attempt, not the
+  // stale "Chain wiped you out / Try again" screen from whatever attempt
+  // was abandoned.
   const onAbortPress = () => {
-    if (status === 'won') { continueNext(); onMenu(); return; }
-    if (status === 'lost') { onMenu(); return; }
+    if (status === 'won') {
+      if (autoAdvancedForBoard.current !== boardId) { autoAdvancedForBoard.current = boardId; continueNext({ silent: true }); }
+      onMenu();
+      return;
+    }
+    if (status === 'lost') { retry({ silent: true }); onMenu(); return; }
     setConfirmingAbort(true);
   };
 
@@ -127,16 +176,6 @@ export default function GameScreen({ g, stats, onMenu }) {
           </>
         )}
 
-        {status === 'won' && (
-          <View style={styles.row}>
-            <Pressable style={[styles.buttonSecondary, adBusy && styles.buttonDisabled]} onPress={() => { continueNext(); onMenu(); }} disabled={adBusy}>
-              <Text style={styles.buttonSecondaryText}>Menu</Text>
-            </Pressable>
-            <Pressable style={[styles.button, adBusy && styles.buttonDisabled]} onPress={continueNext} disabled={adBusy}>
-              <Text style={styles.buttonText}>Continue</Text>
-            </Pressable>
-          </View>
-        )}
       </View>
 
       <ConfirmDialog
@@ -167,7 +206,6 @@ function makeStyles(theme) {
     },
     bannerWin: { color: theme.color.ok },
     bannerLose: { color: theme.color.burst },
-    row: { flexDirection: 'row', gap: 12 },
     button: {
       marginTop: 20, backgroundColor: theme.color.ink,
       paddingVertical: 12, paddingHorizontal: 32, borderRadius: theme.radius,

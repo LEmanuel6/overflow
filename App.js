@@ -19,13 +19,18 @@ import SettingsScreen from './src/screens/SettingsScreen';
 import StatsScreen from './src/screens/StatsScreen';
 import AchievementsScreen from './src/screens/AchievementsScreen';
 import Tray from './src/components/Tray';
+import AchievementToast from './src/components/AchievementToast';
 import { useGame } from './src/state/useGame';
 import { useSettings } from './src/state/useSettings';
 import { useStats } from './src/state/useStats';
-import { useDailyStats, localDateStr } from './src/state/useDailyStats';
+import { useDailyStats, dailyDateStr } from './src/state/useDailyStats';
+import { useAchievementToastQueue } from './src/state/useAchievementToastQueue';
 import { isRewardedAvailable, initAds } from './src/ads';
 import { submitLevelScore } from './src/leaderboards';
+import { setSoundEnabled } from './src/sound';
+import { setHapticsEnabled } from './src/haptics';
 import { DAILY_DIFFICULTY_ORDER, isDailyBoardCached, newDailyGame } from './src/engine';
+import { ACHIEVEMENTS_BY_ID } from './src/data/achievements';
 import { ThemeProvider, darkTheme, lightTheme } from './src/theme';
 
 // Screens that show the bottom tab bar. Tray itself is rendered exactly
@@ -60,6 +65,7 @@ export default function App() {
   const statsApi = useStats();
   const dailyStatsApi = useDailyStats();
   const g = useGame(statsApi, { offerContinue: isRewardedAvailable() });
+  const achievementToasts = useAchievementToastQueue();
   // Ionicons (Tray, Menu, Daily Hub, ...) is a separate font from these three
   // and loads through its own internal mechanism — it was never actually
   // covered by this gate, so the splash could hide (and the Menu screen
@@ -84,6 +90,29 @@ export default function App() {
   // consent + init + the first ad request the whole rest of the session to
   // finish before it's actually needed.
   useEffect(() => { initAds(); }, []);
+
+  // Sound/haptics are module-level toggles (see sound/index.js,
+  // haptics/index.js) rather than props threaded through useGame — both
+  // the ladder's instance here and the daily challenge's separate instance
+  // (DailyChallengeScreen.jsx) call the same playTap/playBurst/impactLight/
+  // etc. functions, so one flag each covers both without prop drilling.
+  useEffect(() => { setSoundEnabled(settings.sound); }, [settings.sound]);
+  useEffect(() => { setHapticsEnabled(settings.haptics); }, [settings.haptics]);
+
+  // Drains each stats blob's own justUnlocked queue (ladder, daily — see
+  // useStats.js/useDailyStats.js) into one shared toast queue, so an unlock
+  // from either source shows the same "Achievement Unlocked" banner and the
+  // two never show two toasts stacked at once.
+  useEffect(() => {
+    if (!statsApi.justUnlocked.length) return;
+    achievementToasts.push(statsApi.justUnlocked);
+    statsApi.clearJustUnlocked();
+  }, [statsApi.justUnlocked, achievementToasts, statsApi]);
+  useEffect(() => {
+    if (!dailyStatsApi.justUnlocked.length) return;
+    achievementToasts.push(dailyStatsApi.justUnlocked);
+    dailyStatsApi.clearJustUnlocked();
+  }, [dailyStatsApi.justUnlocked, achievementToasts, dailyStatsApi]);
 
   // Overall ladder leaderboard score = 1 point per ladder level cleared
   // (stats.best - 1, since best is "next level to clear", i.e. clears+1)
@@ -136,7 +165,7 @@ export default function App() {
   const dailyWarmupDone = warmedCount >= DAILY_DIFFICULTY_ORDER.length;
   useEffect(() => {
     let cancelled = false;
-    const today = localDateStr();
+    const today = dailyDateStr();
     let i = 0;
     const warmNext = () => {
       if (cancelled) return;
@@ -202,6 +231,7 @@ export default function App() {
                 dailyStats={dailyStatsApi.dailyStats}
                 onDaily={goDailyHub}
                 onAchievements={goAchievements}
+                overallPoints={overallPoints}
               />
             </View>
             {screen === 'game' && <GameScreen g={g} stats={statsApi.stats} onMenu={goMenu} />}
@@ -223,6 +253,8 @@ export default function App() {
                 setDarkMode={settings.setDarkMode}
                 sound={settings.sound}
                 setSound={settings.setSound}
+                haptics={settings.haptics}
+                setHaptics={settings.setHaptics}
                 onDevJumpToLevel={onDevJumpToLevel}
                 onBack={goMenu}
               />
@@ -238,6 +270,11 @@ export default function App() {
               onSettings={goSettings}
             />
           )}
+          <AchievementToast
+            theme={theme}
+            achievements={achievementToasts.visible.map((id) => ACHIEVEMENTS_BY_ID[id])}
+            onDone={achievementToasts.remove}
+          />
         </View>
       </ThemeProvider>
     </SafeAreaProvider>

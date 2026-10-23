@@ -5,7 +5,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../theme';
 import ScreenHeader from '../components/ScreenHeader';
 import * as Engine from '../engine';
-import { localDateStr, totalAttemptsForDay } from '../state/useDailyStats';
+import { dailyDateStr, totalAttemptsForDay } from '../state/useDailyStats';
 import { formatTimeMs } from '../utils/format';
 import { isDailyLeaderboardAvailable, isDailyLeaderboardPreview, showDailyLeaderboard } from '../leaderboards';
 
@@ -23,7 +23,7 @@ const DIFFICULTY_ICONS = {
 export default function DailyHubScreen({ dailyStatsApi, onBack, onSelectDifficulty }) {
   const theme = useTheme();
   const styles = useMemo(() => makeStyles(theme), [theme]);
-  const today = localDateStr();
+  const today = dailyDateStr();
   const totalToday = totalAttemptsForDay(dailyStatsApi.dailyStats, today);
 
   return (
@@ -40,7 +40,11 @@ export default function DailyHubScreen({ dailyStatsApi, onBack, onSelectDifficul
           const day = dailyStatsApi.dailyStats.difficulties[id].days[today];
 
           return (
-            <Pressable key={id} style={styles.card} onPress={() => onSelectDifficulty(id)}>
+            <Pressable
+              key={id}
+              style={[styles.card, day?.won && { backgroundColor: theme.color.okSoft, borderColor: theme.color.ok }]}
+              onPress={() => onSelectDifficulty(id)}
+            >
               <View style={[styles.badge, day?.won && styles.badgeWon]}>
                 <Ionicons name={DIFFICULTY_ICONS[id]} size={22} color={day?.won ? theme.color.ok : theme.color.inkSoft} />
               </View>
@@ -68,7 +72,7 @@ export default function DailyHubScreen({ dailyStatsApi, onBack, onSelectDifficul
                   <Ionicons name="trophy-outline" size={20} color={theme.color.inkSoft} />
                 </Pressable>
               )}
-              <Ionicons name="chevron-forward" size={18} color={theme.color.inkSoft} />
+              <Ionicons name="chevron-forward" size={18} color={day?.won ? theme.color.ok : theme.color.inkSoft} />
             </Pressable>
           );
         })}
@@ -92,7 +96,11 @@ function makeStyles(theme) {
       width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center',
       backgroundColor: theme.color.paper, borderWidth: 1, borderColor: theme.color.vesselEdge,
     },
-    badgeWon: { backgroundColor: theme.color.okSoft, borderColor: theme.color.ok },
+    // Stays on the paper background (not okSoft) even once won — the card
+    // itself now turns okSoft (see the Pressable's inline style above), so
+    // keeping the badge's own fill distinct from the card's keeps it from
+    // blending into a solid green block.
+    badgeWon: { backgroundColor: theme.color.paper, borderColor: theme.color.ok },
     cardText: { flex: 1 },
     cardTitle: { fontFamily: theme.font.bold, fontSize: 17, color: theme.color.ink },
     cardMeta: {

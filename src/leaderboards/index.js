@@ -24,7 +24,7 @@
 //    leaderboard doubles as the daily one with no extra plumbing — the one
 //    caveat is that Google's "Today" boundary is its own (not necessarily
 //    the local-midnight boundary the rest of the Daily Challenge uses, see
-//    useDailyStats.js's localDateStr), which could mismatch right around
+//    useDailyStats.js's dailyDateStr), which could mismatch right around
 //    midnight for a given player. Accepted as a minor, non-blocking gap.
 //
 // react-native-google-play-games needs native code that only exists in a
@@ -45,10 +45,10 @@ const live = !!GooglePlayGames && Platform.OS === 'android';
 // REAL_UNIT_IDS in src/ads and REVENUECAT_KEYS in src/purchases.
 const LEVEL_LEADERBOARD_ID = 'CgkIwbv7iL4GEAIQAQ';
 const DAILY_LEADERBOARD_IDS = {
-  beginner: 'CgkIwbv7iL4GEAIQAg',
-  intermediate: 'CgkIwbv7iL4GEAIQAw',
-  expert: 'CgkIwbv7iL4GEAIQBA',
-  master: 'CgkIwbv7iL4GEAIQBQ',
+  beginner: 'CgkIwbv7iL4GEAIQBg',
+  intermediate: 'CgkIwbv7iL4GEAIQBw',
+  expert: 'CgkIwbv7iL4GEAIQCA',
+  master: 'CgkIwbv7iL4GEAIQCQ',
 };
 
 export function isLeaderboardsAvailable() {
@@ -87,10 +87,12 @@ async function ensureSignedIn() {
   if (signInPromise) return signInPromise;
   signInPromise = (async () => {
     try {
-      if (await GooglePlayGames.isAuthenticated()) return true;
+      if (await GooglePlayGames.isAuthenticated()) { console.warn('[lb] already authenticated'); return true; }
       await GooglePlayGames.signIn();
+      console.warn('[lb] signIn() resolved');
       return true;
     } catch (e) {
+      console.warn('[lb] ensureSignedIn failed', e?.message || e);
       signInPromise = null; // let a later call retry rather than sticking on one failure
       return false;
     }
@@ -101,22 +103,26 @@ async function ensureSignedIn() {
 // Fire-and-forget: called from App.js whenever the combined points total
 // (ladder clears + daily tiers first-cleared) changes. Never throws.
 export async function submitLevelScore(points) {
-  if (!isLeaderboardsAvailable()) return;
+  if (!isLeaderboardsAvailable()) { console.warn('[lb] submitLevelScore: not available', { live, LEVEL_LEADERBOARD_ID }); return; }
+  console.warn('[lb] submitLevelScore attempting', points);
   try {
-    if (!(await ensureSignedIn())) return;
-    await GooglePlayGames.submitScore(LEVEL_LEADERBOARD_ID, points);
-  } catch (e) { /* leaderboard submit failing shouldn't affect gameplay */ }
+    if (!(await ensureSignedIn())) { console.warn('[lb] submitLevelScore: not signed in'); return; }
+    const res = await GooglePlayGames.submitScore(LEVEL_LEADERBOARD_ID, points);
+    console.warn('[lb] submitLevelScore OK', points, res);
+  } catch (e) { console.warn('[lb] submitLevelScore FAILED', points, e?.message || e); }
 }
 
 // Fire-and-forget: called on every daily-challenge win (see
 // DailyChallengeScreen). Never throws.
 export async function submitDailyTime(difficulty, timeMs) {
   const id = DAILY_LEADERBOARD_IDS[difficulty];
-  if (!live || !id) return;
+  if (!live || !id) { console.warn('[lb] submitDailyTime: not available', { live, difficulty, id }); return; }
+  console.warn('[lb] submitDailyTime attempting', difficulty, Math.round(timeMs));
   try {
-    if (!(await ensureSignedIn())) return;
-    await GooglePlayGames.submitScore(id, Math.round(timeMs));
-  } catch (e) { /* leaderboard submit failing shouldn't affect gameplay */ }
+    if (!(await ensureSignedIn())) { console.warn('[lb] submitDailyTime: not signed in'); return; }
+    const res = await GooglePlayGames.submitScore(id, Math.round(timeMs));
+    console.warn('[lb] submitDailyTime OK', difficulty, Math.round(timeMs), res);
+  } catch (e) { console.warn('[lb] submitDailyTime FAILED', difficulty, Math.round(timeMs), e?.message || e); }
 }
 
 // Opens Play Games' native leaderboard UI. Both resolve quietly (no-op) if

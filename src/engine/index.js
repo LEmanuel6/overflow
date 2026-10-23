@@ -535,6 +535,10 @@ function levelParams(level) {
 /* ------------------------------------------------------------- lifecycle */
 
 // Start (or restart) a board at the given level. Returns a fresh state.
+// initialCells/initialCaps snapshot the board exactly as generated (before
+// any taps) — retry() below restores from these instead of generating a new
+// random layout, so retrying a failed attempt replays the same board rather
+// than handing the player a different puzzle at the same difficulty.
 function newGame(level = 1) {
   const params = levelParams(level);
   const board = generateBoard(params) || fallbackBoard(params);
@@ -543,6 +547,8 @@ function newGame(level = 1) {
     ratio: params.ratio,
     cells: board.cells,
     caps: board.caps,
+    initialCells: board.cells,
+    initialCaps: board.caps,
     level,
     lives: livesForGrid(params.n),
     taps: 0,
@@ -555,9 +561,17 @@ function nextLevel(state) {
   return newGame(state.level + 1);
 }
 
-// Retry the current level (fresh board, same difficulty, full lives).
+// Retry the current level — same board as the attempt just failed, full
+// lives, rather than generating a new random layout at the same difficulty.
 function retry(state) {
-  return newGame(state.level);
+  return {
+    ...state,
+    cells: state.initialCells,
+    caps: state.initialCaps,
+    lives: livesForGrid(state.n),
+    taps: 0,
+    status: 'play',
+  };
 }
 
 // Last-resort board if generation fails (should be rare): a small safe board.

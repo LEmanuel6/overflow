@@ -8,7 +8,7 @@
 // with their own attempt counts, streaks, and best times, since a player may
 // only ever touch a subset of them.
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { DAILY_DIFFICULTY_ORDER } from '../engine';
 import { ACHIEVEMENTS } from '../data/achievements';
@@ -52,12 +52,26 @@ function withDailyUnlocks(next) {
   return unlockedAt === next.unlockedAt ? next : { ...next, unlockedAt };
 }
 
-// "today's puzzle" needs to match the player's actual sense of "today", so
-// this uses the LOCAL device date — unlike useStats.js's todayStr(), which
-// is UTC and is fine there since it only feeds a background day-streak stat
-// nobody checks at a specific hour.
-export function localDateStr(d = new Date()) {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+// "Today's puzzle" used to mean the player's own device-local date — but
+// Google Play Games' daily-leaderboard "Today" tab resets on its OWN fixed
+// schedule (UTC-7, the "Pacific Daylight Time" convention, held year-round
+// with no DST shift — confirmed against Play Games' own docs), independent
+// of any player's timezone. Those two boundaries used to drift apart by
+// several hours depending where a player lives, which could land a score on
+// the "wrong" side of the leaderboard's daily reset relative to which
+// puzzle the player actually solved. Leon's call: anchor the app's own day
+// boundary to that SAME fixed UTC-7 instant instead, everywhere, for every
+// player, so the two can never disagree — a deliberate trade of "matches
+// each player's own midnight" for "the leaderboard's Today tab always means
+// exactly the puzzle it looks like it means." Note this is a FIXED -7
+// offset, not real US/Pacific time (which itself shifts to UTC-8 outside
+// daylight saving) — matching that shift would reintroduce the exact
+// mismatch this exists to remove.
+const DAILY_BOUNDARY_OFFSET_HOURS = -7;
+
+export function dailyDateStr(d = new Date()) {
+  const shifted = new Date(d.getTime() + DAILY_BOUNDARY_OFFSET_HOURS * 60 * 60 * 1000);
+  return `${shifted.getUTCFullYear()}-${String(shifted.getUTCMonth() + 1).padStart(2, '0')}-${String(shifted.getUTCDate()).padStart(2, '0')}`;
 }
 
 // Sum of attempts across every difficulty for one calendar day — what the
@@ -80,6 +94,27 @@ export function completedCountForDay(dailyStats, dateStr) {
 
 export function useDailyStats() {
   const [dailyStats, setDailyStats] = useState(makeDefaultDailyStats);
+  // Mirrors useStats.js's justUnlocked/clearJustUnlocked — a FIFO of
+  // daily-sourced achievement ids newly unlocked by a LIVE recordResult call.
+  // Detected by comparing dailyStats.unlockedAt across renders (NOT by
+  // reading a variable set inside the setDailyStats updater right after
+  // calling it — a functional setState updater isn't guaranteed to run
+  // synchronously, so that approach silently never fired). See useStats.js
+  // for the full rationale, including why the initial-load effect's own
+  // change is suppressed (that's backfill, not a moment to toast).
+  const [justUnlocked, setJustUnlocked] = useState([]);
+  const clearJustUnlocked = useCallback(() => setJustUnlocked([]), []);
+  const prevUnlockedAtRef = useRef(makeDefaultDailyStats().unlockedAt);
+  const suppressNextUnlockRef = useRef(false);
+
+  useEffect(() => {
+    const prevUnlockedAt = prevUnlockedAtRef.current;
+    prevUnlockedAtRef.current = dailyStats.unlockedAt;
+    if (dailyStats.unlockedAt === prevUnlockedAt) return;
+    if (suppressNextUnlockRef.current) { suppressNextUnlockRef.current = false; return; }
+    const newIds = Object.keys(dailyStats.unlockedAt).filter((id) => !(id in prevUnlockedAt));
+    if (newIds.length) setJustUnlocked((q) => [...q, ...newIds]);
+  }, [dailyStats.unlockedAt]);
 
   const persist = useCallback((next) => {
     AsyncStorage.setItem(STORE_KEY, JSON.stringify(next)).catch(() => {});
@@ -92,6 +127,7 @@ export function useDailyStats() {
         if (raw) {
           const saved = JSON.parse(raw);
           const defaults = makeDefaultDailyStats();
+          suppressNextUnlockRef.current = true;
           setDailyStats(withDailyUnlocks({
             difficulties: Object.fromEntries(
               DAILY_DIFFICULTY_ORDER.map((id) => [id, { ...defaults.difficulties[id], ...saved.difficulties?.[id] }])
@@ -119,7 +155,7 @@ export function useDailyStats() {
 
       const cutoff = new Date();
       cutoff.setDate(cutoff.getDate() - DAYS_RETENTION);
-      const cutoffStr = localDateStr(cutoff);
+      const cutoffStr = dailyDateStr(cutoff);
       const nextDays = { ...prevDiff.days, [dateStr]: { attempts: nextAttempts, won: dayWon, bestTimeMs: dayBestTimeMs, winAttempt } };
       for (const key of Object.keys(nextDays)) if (key < cutoffStr) delete nextDays[key];
 
@@ -144,7 +180,8 @@ export function useDailyStats() {
     const fresh = makeDefaultDailyStats();
     setDailyStats(fresh);
     persist(fresh);
+    setJustUnlocked([]);
   }, [persist]);
 
-  return { dailyStats, recordResult, reset };
+  return { dailyStats, recordResult, reset, justUnlocked, clearJustUnlocked };
 }

@@ -34,6 +34,8 @@ const darkColor = {
   burstSoft: '#3D211A',
   ok: '#4FAE8D',           // green — pushes nothing / safe
   okSoft: '#1D3129',
+  leaderboard: '#5B8FC7',  // blue — matches the overall leaderboard's Play Games icon
+  leaderboardSoft: '#141F2C',
 };
 
 const lightColor = {
@@ -50,6 +52,8 @@ const lightColor = {
   burstSoft: '#F0D6CE',
   ok: '#2E6B57',
   okSoft: '#D8E7DF',
+  leaderboard: '#3A6EA5',
+  leaderboardSoft: '#D8E3EE',
 };
 
 export const darkTheme = { ...shared, mode: 'dark', color: darkColor };

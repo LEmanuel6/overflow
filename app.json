@@ -21,7 +21,7 @@
       "package": "com.leonemanuel.overflow",
       "backgroundColor": "#1B1A17",
       "allowBackup": false,
-      "versionCode": 4
+      "versionCode": 5
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -55,7 +55,8 @@
         {
           "appId": "222820228545"
         }
-      ]
+      ],
+      "expo-audio"
     ]
   }
 }

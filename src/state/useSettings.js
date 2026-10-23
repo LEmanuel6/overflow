@@ -6,7 +6,7 @@ import { useState, useEffect, useCallback } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const STORE_KEY = 'overflow:settings:v1';
-const DEFAULTS = { darkMode: true, sound: true };
+const DEFAULTS = { darkMode: true, sound: true, haptics: true };
 
 export function useSettings() {
   const [settings, setSettings] = useState(DEFAULTS);
@@ -31,7 +31,9 @@ export function useSettings() {
   return {
     darkMode: settings.darkMode,
     sound: settings.sound,
+    haptics: settings.haptics,
     setDarkMode: (v) => update({ darkMode: v }),
     setSound: (v) => update({ sound: v }),
+    setHaptics: (v) => update({ haptics: v }),
   };
 }

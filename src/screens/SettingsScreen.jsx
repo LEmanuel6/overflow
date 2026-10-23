@@ -11,7 +11,7 @@ import {
 } from '../purchases';
 
 // Tray is rendered once, persistently, by App.js — not here (see Tray.jsx).
-export default function SettingsScreen({ darkMode, setDarkMode, sound, setSound, onDevJumpToLevel, onBack }) {
+export default function SettingsScreen({ darkMode, setDarkMode, sound, setSound, haptics, setHaptics, onDevJumpToLevel, onBack }) {
   const theme = useTheme();
   const styles = useMemo(() => makeStyles(theme), [theme]);
 
@@ -33,8 +33,11 @@ export default function SettingsScreen({ darkMode, setDarkMode, sound, setSound,
           <Row theme={theme} styles={styles} label="Dark mode">
             <Switch theme={theme} value={darkMode} onValueChange={setDarkMode} />
           </Row>
-          <Row theme={theme} styles={styles} label="Sound" note="Coming soon">
+          <Row theme={theme} styles={styles} label="Sound">
             <Switch theme={theme} value={sound} onValueChange={setSound} />
+          </Row>
+          <Row theme={theme} styles={styles} label="Haptics">
+            <Switch theme={theme} value={haptics} onValueChange={setHaptics} />
           </Row>
           {privacyRequired && (
             <Row theme={theme} styles={styles} label="Ad privacy">
