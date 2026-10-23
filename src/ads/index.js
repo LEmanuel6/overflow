@@ -197,6 +197,25 @@ export async function showInterstitial() {
   await interstitialSlot.show(0);
 }
 
+// Leon's call: backing out of an attempt (win, loss, or a mid-game quit) to
+// the menu/daily hub is a natural pause point — the player may well be done
+// playing for now, not just passing through — so it's worth the same kind
+// of occasional interstitial as the level-N cadence in GameScreen, just
+// time-based (a quit isn't tied to a level/progression counter the way a
+// board clear is) rather than count-based. In-memory only, not persisted —
+// a cooldown that resets on app relaunch is an acceptable tradeoff for the
+// simplicity, and matches this module's other ad state (interstitialSlot
+// etc., also in-memory, never written to storage).
+const QUIT_AD_COOLDOWN_MS = 5 * 60 * 1000; // 5 minutes
+let lastQuitAdAt = 0;
+
+export async function maybeShowQuitInterstitial() {
+  if (!Ads) return;
+  if (Date.now() - lastQuitAdAt < QUIT_AD_COOLDOWN_MS) return;
+  lastQuitAdAt = Date.now();
+  await showInterstitial();
+}
+
 // Whether Settings should offer the Ad Inspector row — dev builds, or any
 // build with EXPO_PUBLIC_FORCE_TEST_ADS set (currently just `preview`).
 // Never true in a real production build.

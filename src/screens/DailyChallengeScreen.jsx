@@ -25,6 +25,12 @@ function dangerThresholdMs(timeLimitMs) {
 // would more than double Beginner's 20s sprint but barely dent Master's 5 min.
 const CONTINUE_TIME_FRACTION = 0.5;
 
+// Board's onTapCell before the entrance reveal has finished — a stable
+// no-op reference (not an inline arrow) so Board/Cell don't see a new prop
+// identity on every render. Blocks taps mid-sweep so the first tap (which
+// starts the timer) can't land before the board is actually visible.
+const noop = () => {};
+
 // A blank, harmless placeholder board — used only while the real one is
 // still generating (see the loading-state effect below). Its cells are all
 // empty so nothing is tappable even if it briefly reaches the screen; status
@@ -51,6 +57,16 @@ export default function DailyChallengeScreen({ difficulty, dailyStatsApi, statsA
   const [confirmingAbort, setConfirmingAbort] = useState(false);
   const [adBusy, setAdBusy] = useState(false);
   const [adNotice, setAdNotice] = useState(null);
+  // ready: the entrance reveal (see useGame's onRevealDone/runBoardReveal
+  // onDone) has visually finished — taps don't register until then, so the
+  // player can't start the timer mid-sweep. started: the first tap has
+  // landed — ONLY then does the countdown actually run (see countdown's
+  // `active` below); that same tap also counts as a real move, not just a
+  // trigger (see handleCellTap). Both reset to false on every retry, so a
+  // "Try again"/"Beat your time" re-entrance gets the same gate as the first
+  // attempt, not a free head start on the clock.
+  const [ready, setReady] = useState(false);
+  const [started, setStarted] = useState(false);
 
   // Board generation for Expert/Master runs the exact solver once on a
   // full 5x5/6x6 board to prove it's clearable — a genuinely heavy call
@@ -105,6 +121,14 @@ export default function DailyChallengeScreen({ difficulty, dailyStatsApi, statsA
       dailyStatsApi.recordResult(dateStr, difficulty, false, countdownRef.current.elapsedMs);
       statsApi.boardLost({ trackLadder: false });
     },
+    // Fires once the FIRST board's reveal finishes — only relevant when it's
+    // the real board being revealed, not the loading placeholder (see
+    // placeholderState above): when starting uncached, the placeholder has
+    // no visible Board at all (the loading spinner renders instead), so
+    // firing this off its reveal would flip `ready` before the real board
+    // even exists. The uncached effect below passes its own onDone straight
+    // to g.retry() instead, once the real board actually replaces it.
+    onRevealDone: alreadyCached ? () => setReady(true) : undefined,
   });
 
   // Generates the real board once the placeholder has had a chance to paint.
@@ -112,28 +136,54 @@ export default function DailyChallengeScreen({ difficulty, dailyStatsApi, statsA
   // exactly Engine.newDailyGame, so this call does the identical work useGame
   // already does for an explicit "try again", just repurposed to turn the
   // placeholder into the first real board (with the same reveal-sweep
-  // entrance it'd otherwise get).
+  // entrance it'd otherwise get). onDone here is this path's equivalent of
+  // the onRevealDone opt above.
   useEffect(() => {
     if (alreadyCached) return;
-    const t = setTimeout(() => g.retry(), 0);
+    const t = setTimeout(() => g.retry({ onDone: () => setReady(true) }), 0);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Keeps running through g.busy (a cascade/wipe animating) on purpose —
-  // Leon's call: a big chain reaction should cost real time off the clock as
-  // part of its risk, not pause for free. useGame's forceTimeout defers
-  // actually applying an expiry that lands mid-animation until the board
-  // goes idle (see useGame.js), so this doesn't cut an animation short.
+  // Keeps running through a cascade's burst animation on purpose — Leon's
+  // call: a big chain reaction should cost real time off the clock as part
+  // of its risk, not pause for free. But it should NOT keep running through
+  // the win-wipe that follows a win — that's purely decorative presentation,
+  // not part of the puzzle. g.status only flips to 'won' once the wipe
+  // itself finishes (see settleWin in useGame.js — that's deliberately late,
+  // so the ladder doesn't show its "cleared" banner/buttons mid-wipe), but
+  // g.state.status (the engine's own board status) flips to 'won' the
+  // instant the board actually resolves — right as the last burst's
+  // animation concludes and the wipe is ABOUT to start, before it plays.
+  // Gating on that instead stops the clock exactly at "last cell tapped",
+  // not "wipe animation finished", while leaving the win banner/buttons
+  // (which read g.status, not g.state.status) timed the same as before.
+  // useGame's forceTimeout defers actually applying an expiry that lands
+  // mid-animation until the board goes idle (see useGame.js), so this
+  // doesn't cut an animation short. Gated on `started` too, not just
+  // status/confirm — see the `started` state comment above.
   const countdown = useCountdown(timeLimitMs, {
-    active: g.status === 'play' && !confirmingAbort,
+    active: g.state.status === 'play' && !confirmingAbort && started,
     onExpire: g.forceTimeout,
   });
   countdownRef.current = countdown;
 
   const { state, display, bursting, wiping, revealing, boardId, status, tap, displayLives } = g;
 
-  const handleRetry = () => { setAdNotice(null); g.retry(); countdown.reset(); };
+  // The first tap on the board both starts the timer and counts as a real
+  // move — not a separate "arm the clock" tap that gets thrown away.
+  const handleCellTap = (i) => {
+    if (!started) setStarted(true);
+    tap(i);
+  };
+
+  const handleRetry = () => {
+    setAdNotice(null);
+    setReady(false);
+    setStarted(false);
+    g.retry({ onDone: () => setReady(true) });
+    countdown.reset();
+  };
 
   // Rewarded continue. A timeout gets bonus time; a loss by lives gets lives
   // back (see useGame.reviveAfterLoss). Either way the loss is never recorded.
@@ -165,6 +215,7 @@ export default function DailyChallengeScreen({ difficulty, dailyStatsApi, statsA
   const banner =
     status === 'won' ? `Solved in ${formatTimeMs(timeLimitMs - countdown.remainingMs)}` :
     status === 'lost' ? (adNotice || (timedOut ? "Time's up" : 'Chain wiped you out')) :
+    !started ? 'Tap a cell to start the timer' :
     'Beat the clock — clear the board before time runs out';
 
   const subtitle = today
@@ -207,7 +258,7 @@ export default function DailyChallengeScreen({ difficulty, dailyStatsApi, statsA
               wiping={wiping}
               revealing={revealing}
               boardId={boardId}
-              onTapCell={tap}
+              onTapCell={ready ? handleCellTap : noop}
             />
 
             <Text style={[

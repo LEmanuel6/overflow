@@ -138,10 +138,10 @@ console.log('\nlifecycle:');
 // --- lives scale with grid size ----------------------------------------------
 console.log('\nlives scale with grid size:');
 {
-  ok('livesForGrid 3x3', E.livesForGrid(3) === 3);
-  ok('livesForGrid 4x4', E.livesForGrid(4) === 5);
-  ok('livesForGrid 5x5', E.livesForGrid(5) === 7);
-  ok('livesForGrid 6x6', E.livesForGrid(6) === 10);
+  ok('livesForGrid 3x3', E.livesForGrid(3) === 2);
+  ok('livesForGrid 4x4', E.livesForGrid(4) === 4);
+  ok('livesForGrid 5x5', E.livesForGrid(5) === 6);
+  ok('livesForGrid 6x6', E.livesForGrid(6) === 8);
   ok('newGame lives match grid size', E.newGame(1).lives === E.livesForGrid(3));
   ok('newDailyGame lives match grid size', E.newDailyGame('2026-08-07', 'expert').lives === E.livesForGrid(5));
 }
@@ -149,10 +149,10 @@ console.log('\nlives scale with grid size:');
 // --- rewarded continue: reviving a lost board -------------------------------
 console.log('\nrevive (rewarded continue):');
 {
-  ok('continueLivesForGrid 3x3', E.continueLivesForGrid(3) === 2);
-  ok('continueLivesForGrid 4x4', E.continueLivesForGrid(4) === 3);
-  ok('continueLivesForGrid 5x5', E.continueLivesForGrid(5) === 4);
-  ok('continueLivesForGrid 6x6', E.continueLivesForGrid(6) === 5);
+  ok('continueLivesForGrid 3x3', E.continueLivesForGrid(3) === 1);
+  ok('continueLivesForGrid 4x4', E.continueLivesForGrid(4) === 2);
+  ok('continueLivesForGrid 5x5', E.continueLivesForGrid(5) === 3);
+  ok('continueLivesForGrid 6x6', E.continueLivesForGrid(6) === 4);
 
   // a chain that outruns 1 life: tap 0 bursts cells 1 and 2 (2 bursts > 1 life)
   const n = 3, ratio = 0.9, caps = [10, 3, 3, 10, 10, 10, 10, 10, 10];

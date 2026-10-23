@@ -22,7 +22,7 @@ off-grid are lost — this is the ONLY way total value drains, which guarantees 
 board terminates). A cell BURSTS if it exceeds its cap. Bursting cascades: a
 burst cell distributes its value, which can push neighbours over their caps,
 chaining outward. **Each bursting cell costs one life.** Lives scale with grid
-size (`livesForGrid()` in the engine) — 3 at 3×3, 5 at 4×4, 7 at 5×5, 10 at
+size (`livesForGrid()` in the engine) — 2 at 3×3, 4 at 4×4, 6 at 5×5, 8 at
 6×6 (daily-only) — since a bigger board has more cells that can chain into one
 cascade, and more lives lets that be genuine bad luck rather than pure
 life-count attrition on top of the tighter caps. Chains resolve

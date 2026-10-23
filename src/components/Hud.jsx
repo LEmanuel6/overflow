@@ -42,11 +42,19 @@ const FILL_MAX_DURATION = 900;
 // ok/signal/burst colours — already used elsewhere for safe/at-cap/bursting,
 // so this reuses the app's own established colour meaning rather than
 // inventing a new one) spanning the bar's full measured width, REVEALED by
-// a same-coloured-as-empty-track cover shrinking from the right as the bar
-// fills — not a gradient recomputed/stretched to the current fill. That's
-// what makes it a "reveal": the colour at any given fill level always
-// matches that position's true stop on the full green->red strip, rather
-// than the visible portion restretching across the whole range every tick.
+// a clipping wrapper that grows from the left as the bar fills — not a
+// gradient recomputed/stretched to the current fill. That's what makes it a
+// "reveal": the colour at any given fill level always matches that
+// position's true stop on the full green->red strip, rather than the
+// visible portion restretching across the whole range every tick.
+//
+// Grows a reveal wrapper from 0 width (not a full-width gradient covered by
+// a shrinking overlay, the earlier approach) — a width-0 clip can never leak
+// a sliver of the gradient underneath, where two independently-sized/
+// positioned elements (a plain-width gradient + an Animated-width cover)
+// could round to slightly different pixel widths and leave a hairline gap
+// at the empty end. This was found and fixed after exactly that: a faint
+// green strip visible on the left even at zero fill.
 //
 // The cover's width is Animated, not a plain style number — `lives` arrives
 // from useGame already post-cascade (a multi-burst chain updates it ONCE,
@@ -90,8 +98,8 @@ export default function Hud({ level, lives, streak, firstLabel = 'Level', firstV
     prevRef.current = { fillFraction, maxLives, boardId, mounted: true };
   }, [fillFraction, maxLives, boardId, fillAnim]);
 
-  const coverWidth = barWidth > 0
-    ? fillAnim.interpolate({ inputRange: [0, 1], outputRange: [barWidth, 0] })
+  const revealWidth = barWidth > 0
+    ? fillAnim.interpolate({ inputRange: [0, 1], outputRange: [0, barWidth] })
     : 0;
 
   return (
@@ -102,21 +110,19 @@ export default function Hud({ level, lives, streak, firstLabel = 'Level', firstV
         <Text style={styles.k}>Overflow</Text>
         <View style={styles.track} onLayout={(e) => setBarWidth(e.nativeEvent.layout.width)}>
           {barWidth > 0 && (
-            <>
+            <Animated.View
+              style={{
+                position: 'absolute', left: 0, top: 0, height: '100%',
+                width: revealWidth, overflow: 'hidden',
+              }}
+            >
               <LinearGradient
                 colors={[theme.color.ok, theme.color.signal, theme.color.burst]}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 0 }}
-                style={{ position: 'absolute', left: 0, top: 0, width: barWidth, height: '100%' }}
+                style={{ width: barWidth, height: '100%' }}
               />
-              <Animated.View
-                style={{
-                  position: 'absolute', top: 0, right: 0, height: '100%',
-                  width: coverWidth,
-                  backgroundColor: theme.color.vesselEdge,
-                }}
-              />
-            </>
+            </Animated.View>
           )}
         </View>
       </View>

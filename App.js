@@ -25,7 +25,7 @@ import { useSettings } from './src/state/useSettings';
 import { useStats } from './src/state/useStats';
 import { useDailyStats, dailyDateStr } from './src/state/useDailyStats';
 import { useAchievementToastQueue } from './src/state/useAchievementToastQueue';
-import { isRewardedAvailable, initAds } from './src/ads';
+import { isRewardedAvailable, initAds, maybeShowQuitInterstitial } from './src/ads';
 import { submitLevelScore } from './src/leaderboards';
 import { setSoundEnabled } from './src/sound';
 import { setHapticsEnabled } from './src/haptics';
@@ -103,16 +103,29 @@ export default function App() {
   // useStats.js/useDailyStats.js) into one shared toast queue, so an unlock
   // from either source shows the same "Achievement Unlocked" banner and the
   // two never show two toasts stacked at once.
+  //
+  // Depend on the STABLE destructured functions (push/clearJustUnlocked —
+  // each wrapped in useCallback([]) at its source), not the whole statsApi/
+  // dailyStatsApi/achievementToasts objects — none of those three hooks
+  // memoize their returned object, so a whole-object dependency is a new
+  // reference on literally every render of App, which re-runs these effects
+  // on every single state update anywhere in the app — including every
+  // burst/frame tick during a cascade (since g = useGame(...) lives directly
+  // in App's render tree). That extra work landing on the JS thread exactly
+  // while the sweep's setTimeout-staggered bands are also firing was the
+  // likely cause of the choppy/inconsistent sweep Leon reported.
+  const statsJustUnlocked = statsApi.justUnlocked;
+  const dailyJustUnlocked = dailyStatsApi.justUnlocked;
   useEffect(() => {
-    if (!statsApi.justUnlocked.length) return;
-    achievementToasts.push(statsApi.justUnlocked);
+    if (!statsJustUnlocked.length) return;
+    achievementToasts.push(statsJustUnlocked);
     statsApi.clearJustUnlocked();
-  }, [statsApi.justUnlocked, achievementToasts, statsApi]);
+  }, [statsJustUnlocked, achievementToasts.push, statsApi.clearJustUnlocked]);
   useEffect(() => {
-    if (!dailyStatsApi.justUnlocked.length) return;
-    achievementToasts.push(dailyStatsApi.justUnlocked);
+    if (!dailyJustUnlocked.length) return;
+    achievementToasts.push(dailyJustUnlocked);
     dailyStatsApi.clearJustUnlocked();
-  }, [dailyStatsApi.justUnlocked, achievementToasts, dailyStatsApi]);
+  }, [dailyJustUnlocked, achievementToasts.push, dailyStatsApi.clearJustUnlocked]);
 
   // Overall ladder leaderboard score = 1 point per ladder level cleared
   // (stats.best - 1, since best is "next level to clear", i.e. clears+1)
@@ -195,6 +208,15 @@ export default function App() {
   const goDailyHub = () => setScreen('dailyHub');
   const goDailyPlay = (difficulty) => { setDailyDifficulty(difficulty); setScreen('dailyPlay'); };
 
+  // Leaving an actual attempt (ladder or daily) — win, loss, or a mid-game
+  // quit — is the only place this fires; Stats/Achievements/Settings/
+  // DailyHub's own "back" still uses the plain goMenu/goDailyHub above with
+  // no ad. See maybeShowQuitInterstitial's own comment for why here
+  // specifically: the player backing out of a board is a natural pause
+  // point, not just browsing between menus.
+  const leaveGame = () => { maybeShowQuitInterstitial(); goMenu(); };
+  const leaveDailyPlay = () => { maybeShowQuitInterstitial(); goDailyHub(); };
+
   const onReset = () => {
     g.restart();
     statsApi.reset();
@@ -234,12 +256,12 @@ export default function App() {
                 overallPoints={overallPoints}
               />
             </View>
-            {screen === 'game' && <GameScreen g={g} stats={statsApi.stats} onMenu={goMenu} />}
+            {screen === 'game' && <GameScreen g={g} stats={statsApi.stats} onMenu={leaveGame} />}
             <View style={screen === 'dailyHub' ? FULL : HIDDEN}>
               <DailyHubScreen dailyStatsApi={dailyStatsApi} onBack={goMenu} onSelectDifficulty={goDailyPlay} />
             </View>
             {screen === 'dailyPlay' && (
-              <DailyChallengeScreen difficulty={dailyDifficulty} dailyStatsApi={dailyStatsApi} statsApi={statsApi} onBack={goDailyHub} />
+              <DailyChallengeScreen difficulty={dailyDifficulty} dailyStatsApi={dailyStatsApi} statsApi={statsApi} onBack={leaveDailyPlay} />
             )}
             <View style={screen === 'stats' ? FULL : HIDDEN}>
               <StatsScreen stats={statsApi.stats} dailyStats={dailyStatsApi.dailyStats} onBack={goMenu} />

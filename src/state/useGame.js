@@ -14,7 +14,7 @@
 // Cell.jsx by watching its own `value` prop change — this hook only needs to
 // hand it the right numbers at the right times via `display`/`boardId`.
 
-import { useState, useRef, useCallback, useEffect } from 'react';
+import { useState, useRef, useCallback, useEffect, useLayoutEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Engine from '../engine';
 import { playTap, playBurst, playSweepTick } from '../sound';
@@ -34,8 +34,13 @@ const CASCADE_TAIL = 200;      // let the final frame's count-up settle before f
 const WIPE_STAGGER_MAX = 90;   // ms between diagonal wave bands, at most
 const WIPE_TOTAL_TARGET = 960; // aim to spread the whole wave across ~this long
 const WIPE_FADE = 520;         // per-cell fade duration, tail after the last band
-const REVEAL_STAGGER_MAX = 70;   // a touch snappier than the wipe — arriving, not leaving
-const REVEAL_TOTAL_TARGET = 720;
+const REVEAL_STAGGER_MAX = 85;   // a touch snappier than the wipe — arriving, not leaving
+const REVEAL_TOTAL_TARGET = 860;
+// Roughly matches Cell.jsx's own REVEAL_FADE_MS — the extra time after the
+// LAST band starts fading in before that fade visually finishes. Only used
+// to time runBoardReveal's optional onDone callback, so it doesn't need to
+// be pixel-perfect, just close enough that "Start" doesn't appear mid-fade.
+const REVEAL_SETTLE_MS = 420;
 
 // Group cell indices into diagonal bands (band = row + col), the same wave
 // order used for both the win-wipe (out) and the board-load reveal (in).
@@ -71,6 +76,13 @@ export function useGame(statsApi, opts = {}) {
     // leave), so a rewarded "continue" (reviveAfterLoss) can undo it without
     // stats ever seeing a loss AND a win for the same board attempt.
     offerContinue = false,
+    // Fires once the very first board's entrance reveal has visually
+    // finished (see the mount effect below) — used by the daily challenge to
+    // know when taps should start registering (see its `ready` state). Left
+    // undefined by default (the ladder doesn't use it); the daily challenge
+    // screen also passes its own onDone straight to retry() for every later
+    // attempt, since that's a fresh reveal too.
+    onRevealDone,
   } = opts;
 
   const [state, setState] = useState(() => (initialState ? initialState() : Engine.newGame(1)));
@@ -146,23 +158,33 @@ export function useGame(statsApi, opts = {}) {
   useEffect(() => () => commitLoss(), [commitLoss]);
 
   // --- persistence ------------------------------------------------------
-  // Ladder mode resumes a saved level from AsyncStorage on mount. A mode that
-  // opts out (persistProgress: false, e.g. the daily challenge) just reveals
-  // whatever initialState() already produced — no storage touch at all.
-  useEffect(() => {
-    // the initial board created above counts as "begun" too
+  // Daily-mode (persistProgress: false) entrance reveal — useLayoutEffect,
+  // not useEffect: this needs to hide the freshly-mounted board (via the
+  // boardId bump) BEFORE the first paint, the same fix GameScreen's own
+  // replayReveal() applies for the ladder (see its comment) — otherwise
+  // every cell's revealOpacity starts at 1 (fully visible, see Cell.jsx) and
+  // there's no prior boardId to differ from yet, so the whole board is
+  // visible from frame one instead of sweeping in. Audible (never silent) —
+  // this instance only mounts because the player navigated here.
+  useLayoutEffect(() => {
+    if (persistProgress) return;
     livesLostThisBoardRef.current = 0;
     boardStartTimeRef.current = Date.now();
-    // Silent specifically when persistProgress is true (the ladder): that
-    // instance is created once, unconditionally, in App.js at app launch —
-    // this effect always fires while the player is sitting on the Menu
-    // screen (screen state starts there), never while Game is actually
-    // visible. The daily challenge's instance (persistProgress: false) only
-    // mounts because the player navigated to it, so it stays audible.
-    if (!persistProgress) {
-      runBoardReveal(state.n);
-      return () => timers.current.forEach(clearTimeout);
-    }
+    setBoardId((id) => id + 1);
+    runBoardReveal(state.n, { onDone: onRevealDone });
+    return () => timers.current.forEach(clearTimeout);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Ladder mode resumes a saved level from AsyncStorage on mount — async, so
+  // this stays a plain effect (can't hide-before-paint synchronously the way
+  // the daily branch above does; GameScreen's own replayReveal() handles the
+  // ladder's per-navigation entrance reveal separately, on every GameScreen
+  // mount, not here — this effect only runs once, at app launch).
+  useEffect(() => {
+    if (!persistProgress) return;
+    livesLostThisBoardRef.current = 0;
+    boardStartTimeRef.current = Date.now();
     (async () => {
       let loadedSaved = false;
       try {
@@ -249,7 +271,7 @@ export function useGame(statsApi, opts = {}) {
   // stays mounted (display:none) when not the active tab, so this reveal
   // still runs invisibly in the background either way, but without `silent`
   // it would also play an audible sweep for an animation nobody can see.
-  const runBoardReveal = useCallback((n, { silent = false } = {}) => {
+  const runBoardReveal = useCallback((n, { silent = false, onDone } = {}) => {
     setRevealing([]);
     const { bands, keys, stagger } = diagonalBands(n * n, n, REVEAL_STAGGER_MAX, REVEAL_TOTAL_TARGET);
     keys.forEach((band, k) => {
@@ -258,6 +280,7 @@ export function useGame(statsApi, opts = {}) {
         if (!silent) playSweepTick();
       });
     });
+    if (onDone) after(keys.length * stagger + REVEAL_SETTLE_MS, onDone);
   }, []);
 
   // --- the tap --------------------------------------------------------------
@@ -325,15 +348,17 @@ export function useGame(statsApi, opts = {}) {
   // --- controls -------------------------------------------------------------
   // `silent` forwards to runBoardReveal — see its comment. Used when a
   // caller is resetting the board as a side effect of leaving the screen,
-  // not an in-view "Try again" tap.
-  const retry = useCallback(({ silent = false } = {}) => {
+  // not an in-view "Try again" tap. `onDone` also forwards straight through —
+  // the daily challenge uses it to know when a retry's reveal has finished,
+  // same as the mount effect's onRevealDone (see above).
+  const retry = useCallback(({ silent = false, onDone } = {}) => {
     clearTimers();
     beginBoard();
     const g = (regenerate || Engine.retry)(state);
     setState(g); setDisplay(g.cells); setBursting([]); setWiping([]); setStatus('play'); setBusy(false);
     setDisplayLives(g.lives);
     setBoardId((id) => id + 1);
-    runBoardReveal(g.n, { silent });
+    runBoardReveal(g.n, { silent, onDone });
   }, [state, regenerate, runBoardReveal, beginBoard]);
 
   // External forced loss (e.g. a daily-challenge countdown hitting zero) —

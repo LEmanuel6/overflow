@@ -6,7 +6,7 @@ const COUNT_TICK_MS = 26;     // interval between count-up ticks — fast, not d
 const COUNT_MAX_TICKS = 8;    // cap ticks so a big jump still finishes quickly
 const POPUP_LIFE_MS = 650;    // how long a floating "+N" lives before it's removed
 const WIPE_FADE_MS = 480;     // win-wipe per-cell fade duration
-const REVEAL_FADE_MS = 360;   // board-load reveal per-cell fade duration
+const REVEAL_FADE_MS = 420;   // board-load reveal per-cell fade duration
 const POP_UP_MS = 90;         // burst pop: quick bulge...
 const POP_DOWN_MS = 170;      // ...then shrink away
 

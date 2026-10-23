@@ -40,25 +40,30 @@
 'use strict';
 
 const DIRS = [[-1, 0], [1, 0], [0, -1], [0, 1]];
-const MAX_LIVES = 3; // 3x3's life count — kept as its own name since it's
+const MAX_LIVES = 2; // 3x3's life count — kept as its own name since it's
 // also the pre-existing default for any state built without going through
 // livesForGrid (e.g. test.js's hand-built states).
 
 // Lives scale with grid size — a bigger board has more cells that can chain
 // into a single cascade, so more lives to survive genuine bad luck rather
 // than the extra difficulty being pure life-count attrition on top of the
-// tighter caps. Leon's explicit values (3x3 unchanged, 4x4=5, 5x5=7,
-// 6x6=10 — the last only ever seen in the daily challenge's Master tier).
-// Lowered from an initial 3/7/10/13 after playtesting felt too generous.
+// tighter caps. Leon's explicit values (3x3=2, 4x4=4, 5x5=6, 6x6=8 — the
+// last only ever seen in the daily challenge's Master tier).
+// Previously 3/5/7/10 (itself already lowered once from an initial
+// 3/7/10/13 after playtesting felt too generous) — trimmed again after
+// noticing a 3x3 board has much less room for a cascade to actually chain
+// through (fewer neighbours per cell, less board to propagate across), so
+// its 3-life buffer mostly sat unused and made the tutorial size feel
+// trivial rather than genuinely low-risk.
 function livesForGrid(n) {
-  if (n >= 6) return 10;
-  if (n === 5) return 7;
-  if (n === 4) return 5;
+  if (n >= 6) return 8;
+  if (n === 5) return 6;
+  if (n === 4) return 4;
   return MAX_LIVES;
 }
 
 // Lives restored by a rewarded "continue" after losing a board: half the
-// board's normal count, rounded up (3x3=2, 4x4=3, 5x5=4, 6x6=5) — a real
+// board's normal count, rounded up (3x3=1, 4x4=2, 5x5=3, 6x6=4) — a real
 // second chance, not a full reset that would make the ad a free retry.
 function continueLivesForGrid(n) {
   return Math.ceil(livesForGrid(n) / 2);

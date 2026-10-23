@@ -26,6 +26,10 @@ export function showInterstitial() {
   return Promise.resolve();
 }
 
+export function maybeShowQuitInterstitial() {
+  return Promise.resolve();
+}
+
 export function isAdInspectorAvailable() {
   return false; // native-only, no equivalent on web
 }
