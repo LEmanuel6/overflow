@@ -1,6 +1,6 @@
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, Pressable, StyleSheet } from 'react-native';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../theme';
 import Board from '../components/Board';
@@ -30,6 +30,18 @@ export default function GameScreen({ g, stats, onMenu }) {
   const { state, display, bursting, wiping, revealing, boardId, status, tap, retry, continueNext, canContinue, reviveAfterLoss, displayLives, replayReveal } = g;
   const theme = useTheme();
   const styles = useMemo(() => makeStyles(theme), [theme]);
+  // insets applied as plain padding below, not via the <SafeAreaView>
+  // component — that component (react-native-safe-area-context 5.x) is a
+  // true native view that does its OWN native-side inset measurement per
+  // instance, separate from this hook's already-settled JS context value.
+  // GameScreen fully unmounts/remounts on every navigation (see below), so a
+  // <SafeAreaView> here would re-trigger that native round-trip on every
+  // single entrance — a plausible source of the brief top/bottom-cut-off
+  // jump reported right as a board loads in. useSafeAreaInsets() reads
+  // straight from the context, correct on the very first render, no native
+  // round-trip needed. MenuScreen etc. don't have this problem since they're
+  // mounted once at launch and never remount, so their own <SafeAreaView>
+  // only ever pays that cost once.
   const insets = useSafeAreaInsets();
   const [confirmingAbort, setConfirmingAbort] = useState(false);
   const [adBusy, setAdBusy] = useState(false);
@@ -132,7 +144,7 @@ export default function GameScreen({ g, stats, onMenu }) {
   };
 
   return (
-    <SafeAreaView style={styles.safe}>
+    <View style={[styles.safe, { paddingTop: insets.top, paddingBottom: insets.bottom, paddingLeft: insets.left, paddingRight: insets.right }]}>
       <Pressable
         style={[styles.abortButton, { top: insets.top + 8 }]}
         onPress={onAbortPress}
@@ -187,7 +199,7 @@ export default function GameScreen({ g, stats, onMenu }) {
         onCancel={() => setConfirmingAbort(false)}
         onConfirm={handleAbort}
       />
-    </SafeAreaView>
+    </View>
   );
 }
 

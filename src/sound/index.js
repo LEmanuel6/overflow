@@ -69,6 +69,18 @@ function ensurePools() {
   return pools;
 }
 
+// App.js calls this once, early at launch (same spirit as initAds()) — NOT
+// relying on ensurePools()'s own lazy trigger. createAudioPlayer() loads its
+// buffer asynchronously; left lazy, the player's very first tap would be the
+// same instant all 42 players (6 tap + 6 sweep + 5 burst variants x 6) get
+// created at once, so several of the first real taps/bursts could land
+// before their player's buffer had actually finished loading and play()
+// silently did nothing. Warming this up well before the player can interact
+// gives every pool time to finish loading first.
+export function preloadSounds() {
+  ensurePools();
+}
+
 // Module-level mute switch — App.js calls this whenever the Settings
 // screen's Sound toggle changes (see useSettings.js), so every call site
 // below (and every consumer of useGame, ladder or daily) stays unaware of

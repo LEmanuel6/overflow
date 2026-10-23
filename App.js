@@ -27,7 +27,7 @@ import { useDailyStats, dailyDateStr } from './src/state/useDailyStats';
 import { useAchievementToastQueue } from './src/state/useAchievementToastQueue';
 import { isRewardedAvailable, initAds, maybeShowQuitInterstitial } from './src/ads';
 import { submitLevelScore } from './src/leaderboards';
-import { setSoundEnabled } from './src/sound';
+import { setSoundEnabled, preloadSounds } from './src/sound';
 import { setHapticsEnabled } from './src/haptics';
 import { DAILY_DIFFICULTY_ORDER, isDailyBoardCached, newDailyGame } from './src/engine';
 import { ACHIEVEMENTS_BY_ID } from './src/data/achievements';
@@ -97,6 +97,14 @@ export default function App() {
   // consent + init + the first ad request the whole rest of the session to
   // finish before it's actually needed.
   useEffect(() => { initAds(); }, []);
+
+  // Warms up the audio players as early as possible — same reasoning as
+  // initAds() above. createAudioPlayer() loads each sound's buffer
+  // asynchronously; left to its own lazy trigger (see sound/index.js), the
+  // player's very first tap would be the same instant all of them start
+  // loading at once, so several of the first real taps/bursts could land
+  // silently before their player was actually ready.
+  useEffect(() => { preloadSounds(); }, []);
 
   // Sound/haptics are module-level toggles (see sound/index.js,
   // haptics/index.js) rather than props threaded through useGame — both

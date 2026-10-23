@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, Pressable, StyleSheet, ActivityIndicator } from 'react-native';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../theme';
 import Board from '../components/Board';
@@ -48,6 +48,12 @@ function placeholderState(config) {
 export default function DailyChallengeScreen({ difficulty, dailyStatsApi, statsApi, onBack }) {
   const theme = useTheme();
   const styles = useMemo(() => makeStyles(theme), [theme]);
+  // insets applied as plain padding below, not via the <SafeAreaView>
+  // component — see GameScreen.jsx's identical comment for the full
+  // rationale: that component does its own native-side measurement per
+  // instance, and this screen fully unmounts/remounts on every navigation,
+  // so it would re-pay that cost on every single entrance. useSafeAreaInsets()
+  // reads straight from the already-settled context instead.
   const insets = useSafeAreaInsets();
 
   const config = Engine.DAILY_DIFFICULTIES[difficulty];
@@ -223,7 +229,7 @@ export default function DailyChallengeScreen({ difficulty, dailyStatsApi, statsA
     : 'First attempt today';
 
   return (
-    <SafeAreaView style={styles.safe}>
+    <View style={[styles.safe, { paddingTop: insets.top, paddingBottom: insets.bottom, paddingLeft: insets.left, paddingRight: insets.right }]}>
       <Pressable
         style={[styles.abortButton, { top: insets.top + 8 }]}
         onPress={onAbortPress}
@@ -302,7 +308,7 @@ export default function DailyChallengeScreen({ difficulty, dailyStatsApi, statsA
         onCancel={() => setConfirmingAbort(false)}
         onConfirm={handleAbort}
       />
-    </SafeAreaView>
+    </View>
   );
 }
 
