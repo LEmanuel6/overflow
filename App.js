@@ -33,17 +33,24 @@ import { DAILY_DIFFICULTY_ORDER, isDailyBoardCached, newDailyGame } from './src/
 import { ACHIEVEMENTS_BY_ID } from './src/data/achievements';
 import { ThemeProvider, darkTheme, lightTheme } from './src/theme';
 
-// Screens that show the bottom tab bar. Tray itself is rendered exactly
-// once, as a sibling of the swapped screen content, so switching tabs
-// doesn't tear the tray down and rebuild it. That alone wasn't enough,
-// though: each screen's CONTENT was still conditionally mounted/unmounted on
-// every switch — its own source of a transition-frame flicker. All five are
-// now mounted unconditionally from the very first render (hidden via
-// display:none except the active one) rather than lazily on first visit, so
-// even the FIRST navigation to a given tab is just a visibility toggle on an
-// already-painted tree, not a fresh mount — the one-time mount/layout cost
-// happens once, up front, during app launch, where a brief delay is already
-// expected (it's covered by the font-loading gate below).
+// Screens that show the bottom tab bar. Tray itself is mounted exactly once
+// (wrapped in its own display:none toggle below, not conditionally rendered)
+// so switching tabs — INCLUDING to/from 'game'/'dailyPlay', which aren't
+// TRAY_SCREENS — never tears it down and rebuilds it. It used to be
+// conditionally rendered (`TRAY_SCREENS.has(screen) && <Tray/>`), which
+// mounted/unmounted it on every transition across that boundary — entering
+// or leaving a board removes/adds a real chunk of bottom-of-screen height,
+// and doing that via a genuine native mount/unmount (rather than a display
+// toggle on an already-settled layout) was visible as a brief layout
+// jump right as the board itself was loading in. Found and fixed after
+// exactly that was reported. Each of the five tab screens' own CONTENT was a
+// separate instance of the same issue — those are mounted unconditionally
+// from the very first render (hidden via display:none except the active
+// one) rather than lazily on first visit, so even the FIRST navigation to a
+// given tab is just a visibility toggle on an already-painted tree, not a
+// fresh mount — the one-time mount/layout cost happens once, up front,
+// during app launch, where a brief delay is already expected (it's covered
+// by the font-loading gate below).
 const TRAY_SCREENS = new Set(['menu', 'stats', 'achievements', 'settings', 'dailyHub']);
 
 const FULL = { flex: 1 };
@@ -295,7 +302,7 @@ export default function App() {
               />
             </View>
           </View>
-          {TRAY_SCREENS.has(screen) && (
+          <View style={TRAY_SCREENS.has(screen) ? undefined : HIDDEN}>
             <Tray
               theme={theme}
               active={screen}
@@ -304,7 +311,7 @@ export default function App() {
               onAchievements={goAchievements}
               onSettings={goSettings}
             />
-          )}
+          </View>
           <AchievementToast
             theme={theme}
             achievements={achievementToasts.visible.map((id) => ACHIEVEMENTS_BY_ID[id])}

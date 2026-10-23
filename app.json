@@ -21,7 +21,7 @@
       "package": "com.leonemanuel.overflow",
       "backgroundColor": "#1B1A17",
       "allowBackup": false,
-      "versionCode": 7
+      "versionCode": 8
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -40,7 +40,7 @@
           "backgroundColor": "#1B1A17",
           "image": "./assets/splash.png",
           "resizeMode": "contain",
-          "imageWidth": 180
+          "imageWidth": 284
         }
       ],
       [
