@@ -40,7 +40,19 @@ function Cell({ value, cap, push, size, boardId, isGreen, isBursting, isWiping, 
   const popupIdRef = useRef(0);
   const timeoutsRef = useRef([]);
   const fadeOpacity = useRef(new Animated.Value(1)).current;
-  const revealOpacity = useRef(new Animated.Value(1)).current;
+  // Starts HIDDEN (0), not 1 — a fresh board entrance (GameScreen/
+  // DailyChallengeScreen both fully unmount+remount on every navigation,
+  // unlike the ladder's level-to-level continueNext, which updates an
+  // already-mounted tree) used to rely on a useLayoutEffect reactively
+  // setting this to 0 before the first paint, racing the boardId bump
+  // against React Native's native view-mounting commit. Mounting brand-new
+  // native views is heavier than updating existing ones, so that race could
+  // lose specifically on a fresh mount — the board would flash fully visible
+  // for a frame before snapping hidden and sweeping in. Starting hidden by
+  // default removes the race entirely: there's nothing to "catch up" on the
+  // first frame. The existing isRevealing-driven fade-in below still brings
+  // it to 1 on its own, independent of any boardId timing.
+  const revealOpacity = useRef(new Animated.Value(0)).current;
   const popScale = useRef(new Animated.Value(1)).current;
 
   const setDisplayValue = (v) => { curValueRef.current = v; setDisplayValueState(v); };

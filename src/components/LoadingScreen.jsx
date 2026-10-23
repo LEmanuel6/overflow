@@ -60,27 +60,47 @@ const PULSE_DOWN_MS = 220;
 const PULSE_SCALE = 1.16;
 const CELL_STAGGER_MS = 130;
 const CYCLE_PAUSE_MS = 1000; // pause after all 4 have pulsed, before the next sweep
+const CYCLE_MS = (CELLS.length - 1) * CELL_STAGGER_MS + PULSE_UP_MS + PULSE_DOWN_MS + CYCLE_PAUSE_MS;
 
 // One Animated.Value per cell, swept in CELLS order with a short stagger
 // between each (cell N starts before cell N-1 has finished), then a pause,
 // looping indefinitely for as long as this screen is mounted.
+//
+// Scheduled with plain setTimeout per cell (mirroring useGame.js's own
+// diagonalBands/runWinWipe stagger pattern), not Animated.loop + stagger —
+// this screen runs alongside genuinely heavy synchronous work (Expert/
+// Master's exact-solver board generation, see App.js, ~200-450ms+ blocking
+// the JS thread per tier). Animated.loop's own iteration/stagger scheduling
+// also lives on the JS thread, so under that blocking its starts could bunch
+// up once the thread freed, firing several cells' pulses in a burst instead
+// of in sequence — reported as "cells snapping to the wrong size". Plain
+// timers don't fix the underlying blocking (nothing can, short of yielding
+// inside the solver itself), but the explicit cleanup below — clearing every
+// pending timer AND stopping+resetting every in-flight animation on unmount —
+// guarantees a cell can never be left stuck mid-pulse at a scaled-up size,
+// which was the actual visible symptom.
 function usePulseStagger(count) {
   const scales = useRef(Array.from({ length: count }, () => new Animated.Value(1))).current;
 
   useEffect(() => {
-    const pulse = (v) => Animated.sequence([
-      Animated.timing(v, { toValue: PULSE_SCALE, duration: PULSE_UP_MS, useNativeDriver: true }),
-      Animated.timing(v, { toValue: 1, duration: PULSE_DOWN_MS, useNativeDriver: true }),
-    ]);
-    const loop = Animated.loop(
+    const timers = [];
+    const pulseCell = (i) => {
       Animated.sequence([
-        Animated.stagger(CELL_STAGGER_MS, scales.map(pulse)),
-        Animated.delay(CYCLE_PAUSE_MS),
-      ])
-    );
-    loop.start();
-    return () => loop.stop();
-  }, [scales]);
+        Animated.timing(scales[i], { toValue: PULSE_SCALE, duration: PULSE_UP_MS, useNativeDriver: true }),
+        Animated.timing(scales[i], { toValue: 1, duration: PULSE_DOWN_MS, useNativeDriver: true }),
+      ]).start();
+    };
+    const runCycle = () => {
+      for (let i = 0; i < count; i++) timers.push(setTimeout(() => pulseCell(i), i * CELL_STAGGER_MS));
+      timers.push(setTimeout(runCycle, CYCLE_MS));
+    };
+    runCycle();
+
+    return () => {
+      timers.forEach(clearTimeout);
+      scales.forEach((v) => { v.stopAnimation(); v.setValue(1); });
+    };
+  }, [scales, count]);
 
   return scales;
 }
@@ -94,11 +114,20 @@ export default function LoadingScreen({ progress }) {
     Animated.timing(fillAnim, {
       toValue: clamped,
       duration: 260,
-      useNativeDriver: false, // animating `width` — not supported by the native driver
+      // Native-driven, unlike the Hud meter's own width-based reveal — this
+      // screen runs alongside the same heavy synchronous board generation
+      // discussed above, and a `useNativeDriver: false` (JS-thread-only)
+      // width animation has nowhere to run frames while that thread is
+      // blocked, so it was catching up in a visible snap once freed instead
+      // of animating. scaleX + transformOrigin: 'left' (see below) can run
+      // this one entirely on the UI thread instead, immune to that blocking.
+      // Trade-off, acceptable here unlike the Hud meter: the gradient
+      // restretches across whatever's currently revealed rather than always
+      // showing the true colour at that position on the full strip — fine
+      // for a coarse 4-step loading indicator, not for an in-game life meter.
+      useNativeDriver: true,
     }).start();
   }, [clamped, fillAnim]);
-
-  const revealWidth = fillAnim.interpolate({ inputRange: [0, 1], outputRange: [0, TRACK_WIDTH] });
 
   return (
     <View style={styles.container}>
@@ -121,7 +150,13 @@ export default function LoadingScreen({ progress }) {
       </View>
       <View style={styles.trackWrap}>
         <View style={styles.track}>
-          <Animated.View style={{ width: revealWidth, height: '100%', overflow: 'hidden' }}>
+          <Animated.View
+            style={{
+              width: TRACK_WIDTH, height: '100%',
+              transform: [{ scaleX: fillAnim }],
+              transformOrigin: 'left',
+            }}
+          >
             <LinearGradient
               colors={['#4FAE8D', '#E0A542', '#E2593C']}
               start={{ x: 0, y: 0 }}

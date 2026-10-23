@@ -192,7 +192,20 @@ export default function App() {
     return () => { cancelled = true; };
   }, []);
 
-  if (!fontsLoaded || !dailyWarmupDone) {
+  // dailyWarmupDone flips true in the SAME render as warmedCount reaching its
+  // max — meaning LoadingScreen would never actually render (or animate to)
+  // its own 100% frame; the swap to the main app below would cut it off
+  // mid-transition. This short hold lets that final bar animation actually
+  // play before the swap, instead of visibly snapping away. Not needed for
+  // fontsLoaded — that one isn't driving a visible in-progress animation.
+  const [warmupSettled, setWarmupSettled] = useState(false);
+  useEffect(() => {
+    if (!dailyWarmupDone) return;
+    const t = setTimeout(() => setWarmupSettled(true), 320);
+    return () => clearTimeout(t);
+  }, [dailyWarmupDone]);
+
+  if (!fontsLoaded || !warmupSettled) {
     // fontsLoaded alone still gates the NATIVE splash (see hideAsync()
     // above) — this screen is what takes over the instant that hides, so
     // the native splash's own hold doesn't need to (and shouldn't) wait on
