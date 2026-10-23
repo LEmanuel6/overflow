@@ -99,12 +99,14 @@ export default function App() {
   useEffect(() => { initAds(); }, []);
 
   // Warms up the audio players as early as possible — same reasoning as
-  // initAds() above. createAudioPlayer() loads each sound's buffer
-  // asynchronously; left to its own lazy trigger (see sound/index.js), the
-  // player's very first tap would be the same instant all of them start
-  // loading at once, so several of the first real taps/bursts could land
-  // silently before their player was actually ready.
-  useEffect(() => { preloadSounds(); }, []);
+  // initAds() above, but actually AWAITED this time: a staggered/fixed-delay
+  // warmup still wasn't reliably done before a player's first tap or the
+  // board's entrance-reveal sweep. soundsReady feeds the loading-screen gate
+  // below, the same way dailyWarmupDone does — launch holds until the sounds
+  // that fire almost immediately (sweep, tap) are actually loaded, not just
+  // "given a head start."
+  const [soundsReady, setSoundsReady] = useState(false);
+  useEffect(() => { preloadSounds().then(() => setSoundsReady(true)); }, []);
 
   // Sound/haptics are module-level toggles (see sound/index.js,
   // haptics/index.js) rather than props threaded through useGame — both
@@ -215,10 +217,10 @@ export default function App() {
   // fontsLoaded — that one isn't driving a visible in-progress animation.
   const [warmupSettled, setWarmupSettled] = useState(false);
   useEffect(() => {
-    if (!dailyWarmupDone) return;
+    if (!dailyWarmupDone || !soundsReady) return;
     const t = setTimeout(() => setWarmupSettled(true), 320);
     return () => clearTimeout(t);
-  }, [dailyWarmupDone]);
+  }, [dailyWarmupDone, soundsReady]);
 
   if (!fontsLoaded || !warmupSettled) {
     // fontsLoaded alone still gates the NATIVE splash (see hideAsync()

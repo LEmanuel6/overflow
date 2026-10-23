@@ -30,6 +30,10 @@ const BURST_SOUNDS = [
 // cover realistic overlap," not a measured number.
 const POOL_SIZE = 6;
 
+// Returns { play, players } rather than just the play function — exposing
+// the underlying players lets preloadSounds() below actually watch their
+// `isLoaded` flag instead of just hoping they're ready by the time they're
+// first used.
 function makePool(source) {
   if (!createAudioPlayer) return null;
   let players;
@@ -37,7 +41,7 @@ function makePool(source) {
     players = Array.from({ length: POOL_SIZE }, () => createAudioPlayer(source));
   } catch (e) { return null; }
   let next = 0;
-  return () => {
+  const play = () => {
     try {
       const player = players[next];
       next = (next + 1) % POOL_SIZE;
@@ -52,33 +56,84 @@ function makePool(source) {
       player.play()?.catch?.(() => {});
     } catch (e) { /* a single play failing shouldn't affect gameplay */ }
   };
+  return { play, players };
+}
+
+// Polls a pool's players for `isLoaded` rather than trusting a fixed delay —
+// the actual decode time varies by device, so a guessed setTimeout either
+// wastes time on a fast phone or isn't long enough on a slow one. Resolves
+// as soon as every player in the pool reports loaded, or after timeoutMs
+// regardless (so a single stuck/erroring player — or a platform where
+// isLoaded never flips, which shouldn't happen per expo-audio's API but
+// isn't worth hanging the loading screen over) can't block launch forever.
+function waitUntilLoaded(pool, timeoutMs) {
+  if (!pool) return Promise.resolve();
+  return new Promise((resolve) => {
+    const start = Date.now();
+    const check = () => {
+      const ready = pool.players.every((p) => { try { return p.isLoaded; } catch (e) { return true; } });
+      if (ready || Date.now() - start > timeoutMs) { resolve(); return; }
+      setTimeout(check, 40);
+    };
+    check();
+  });
 }
 
 // Pools are built lazily (not at module load) so a runtime with no native
 // audio module (web, or Expo Go without expo-audio's native code) never
 // pays for/attempts the native calls at all until a sound is actually
 // requested — same "safe until needed" shape as src/ads and src/purchases.
-let pools = null;
-function ensurePools() {
-  if (pools) return pools;
-  pools = {
-    tap: makePool(TAP_SOUND),
-    sweep: makePool(SWEEP_SOUND),
-    bursts: BURST_SOUNDS.map(makePool),
-  };
-  return pools;
+//
+// Each sound group gets its OWN lazy builder rather than one shared
+// ensurePools() that built all three in a single batch. Calling preloadSounds()
+// still wasn't enough to stop the first few real sounds from landing silently —
+// building all 42 players (6 tap + 6 sweep + 5 burst variants x 6) in one go
+// meant every pool was competing with every other for whatever native decode
+// capacity the device has, so none of them reliably finished loading in time.
+// Splitting these apart lets preloadSounds() (below) prioritise the ones
+// actually needed first — sweep, then tap — and stagger bursts in afterwards.
+let tapPool = null;
+function ensureTapPool() {
+  if (!tapPool) tapPool = makePool(TAP_SOUND);
+  return tapPool;
+}
+let sweepPool = null;
+function ensureSweepPool() {
+  if (!sweepPool) sweepPool = makePool(SWEEP_SOUND);
+  return sweepPool;
+}
+let burstPools = null;
+function ensureBurstPools() {
+  if (!burstPools) burstPools = BURST_SOUNDS.map(makePool);
+  return burstPools;
 }
 
-// App.js calls this once, early at launch (same spirit as initAds()) — NOT
-// relying on ensurePools()'s own lazy trigger. createAudioPlayer() loads its
-// buffer asynchronously; left lazy, the player's very first tap would be the
-// same instant all 42 players (6 tap + 6 sweep + 5 burst variants x 6) get
-// created at once, so several of the first real taps/bursts could land
-// before their player's buffer had actually finished loading and play()
-// silently did nothing. Warming this up well before the player can interact
-// gives every pool time to finish loading first.
+// App.js calls this once, early at launch (same spirit as initAds()), and —
+// unlike the earlier version of this function — actually AWAITS it, gating
+// the loading screen itself on the result (see App.js's warmupSettled
+// effect). Staggering sound loading behind the scenes was never going to be
+// reliable: how long decode actually takes depends on the device, so no
+// fixed delay could be trusted not to still lose the race against a
+// player's first tap. Blocking launch on it instead mirrors the exact
+// tradeoff already made for the daily boards above (costs every launch
+// however long it takes, in exchange for nothing ever being silently not
+// ready) — same philosophy, same place.
+//
+// sweep is the very FIRST sound a player hears — it plays during the
+// board's entrance reveal, which fires the instant a board loads in, before
+// any tap is even possible — so it and tap (right behind it) are the ones
+// actually waited on. Bursts only ever fire after a chain reaction, which
+// needs at least one successful tap first, so they have the most runway and
+// are just kicked off in the background, not awaited.
+const CRITICAL_LOAD_TIMEOUT_MS = 4000;
 export function preloadSounds() {
-  ensurePools();
+  const sweep = ensureSweepPool();
+  const tap = ensureTapPool();
+  ensureBurstPools();
+  return Promise.all([
+    waitUntilLoaded(sweep, CRITICAL_LOAD_TIMEOUT_MS),
+    waitUntilLoaded(tap, CRITICAL_LOAD_TIMEOUT_MS),
+  ]);
 }
 
 // Module-level mute switch — App.js calls this whenever the Settings
@@ -90,7 +145,7 @@ export function setSoundEnabled(v) { enabled = v; }
 
 export function playTap() {
   if (!enabled) return;
-  ensurePools().tap?.();
+  ensureTapPool()?.play();
 }
 
 // Rotates through the 5 burst variants rather than replaying the same
@@ -99,10 +154,10 @@ export function playTap() {
 let nextBurstVariant = 0;
 export function playBurst() {
   if (!enabled) return;
-  const { bursts } = ensurePools();
-  const play = bursts[nextBurstVariant];
+  const bursts = ensureBurstPools();
+  const pool = bursts[nextBurstVariant];
   nextBurstVariant = (nextBurstVariant + 1) % bursts.length;
-  play?.();
+  pool?.play();
 }
 
 // One per diagonal band during the win-wipe / board-reveal sweep — not one
@@ -112,5 +167,5 @@ export function playBurst() {
 // diagonalBands/runWinWipe/runBoardReveal, which this is called from).
 export function playSweepTick() {
   if (!enabled) return;
-  ensurePools().sweep?.();
+  ensureSweepPool()?.play();
 }
