@@ -53,7 +53,13 @@ function ToastItem({ theme, achievement, onDone }) {
   const translateY = anim.interpolate({ inputRange: [0, 1], outputRange: [24, 0] });
 
   return (
-    <Animated.View style={{ opacity: anim, transform: [{ translateY }] }}>
+    // width: '100%' here, not just on `card` below — without it, this
+    // Animated.View has no defined width of its own (it sits in `wrap`'s
+    // alignItems: 'center', which sizes children to content, not to the
+    // parent), so card's `width: '100%'` had nothing stable to resolve
+    // against and could compute wider than wrap's actual left/right-inset
+    // bounds — the exact "spills off either side of the screen" symptom.
+    <Animated.View style={{ width: '100%', opacity: anim, transform: [{ translateY }] }}>
       <View style={[styles.card, { backgroundColor: theme.color.vessel, borderColor: theme.color.ok }]}>
         <View style={[styles.badge, { backgroundColor: theme.color.okSoft, borderColor: theme.color.ok }]}>
           <Ionicons name={achievement.icon} size={18} color={theme.color.ok} />
@@ -76,7 +82,10 @@ const styles = StyleSheet.create({
   },
   card: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
-    width: '100%', maxWidth: 380, padding: 10, paddingRight: 16,
+    // 380 -> 480: same scale-up as the other screens (see StatsScreen.jsx) —
+    // a notification banner pinned to a phone's width would get lost at the
+    // bottom of a tablet screen.
+    width: '100%', maxWidth: 480, padding: 10, paddingRight: 16,
     borderWidth: 1, borderRadius: 10,
     shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 8, shadowOffset: { width: 0, height: 3 },
   },

@@ -10,6 +10,24 @@ import {
   buyRemoveAds, restorePurchases, devClearPurchase,
 } from '../purchases';
 
+let Updates = null;
+try { Updates = require('expo-updates'); } catch (e) { /* no native updates module in this runtime */ }
+
+// TEMPORARY diagnostic — shown unconditionally (not gated behind __DEV__),
+// since the whole point is to see it in the actual production build Leon is
+// testing on-device. Settles "is this bug really still in the latest push,
+// or did the device just not pick it up yet" without guessing from force-
+// close counts. Remove once the current round of sound bugs is resolved.
+function UpdateInfo({ styles }) {
+  if (!Updates) return null;
+  const id = Updates.updateId ? Updates.updateId.slice(0, 8) : null;
+  return (
+    <Text style={styles.devLabel}>
+      Update: {Updates.isEmbeddedLaunch ? 'embedded build (no OTA update applied)' : (id || 'unknown')}
+    </Text>
+  );
+}
+
 // Tray is rendered once, persistently, by App.js — not here (see Tray.jsx).
 export default function SettingsScreen({ darkMode, setDarkMode, sound, setSound, haptics, setHaptics, onDevJumpToLevel, onBack }) {
   const theme = useTheme();
@@ -49,6 +67,7 @@ export default function SettingsScreen({ darkMode, setDarkMode, sound, setSound,
           <PurchaseRows styles={styles} theme={theme} />
         </View>
 
+        <UpdateInfo styles={styles} />
         {__DEV__ && <DevLevelJump styles={styles} theme={theme} onJump={onDevJumpToLevel} />}
         {isAdInspectorAvailable() && <DevAdInspector styles={styles} />}
         {__DEV__ && isPurchaseStub && (
@@ -87,20 +106,20 @@ function PurchaseRows({ styles, theme }) {
     setBusy(true); setBuyNotice(null); setRestoreNotice(null);
     const r = await buyRemoveAds();
     setBusy(false);
-    if (r === 'error') setBuyNotice("Couldn't complete the purchase — try again");
+    if (r === 'error') setBuyNotice("Couldn't complete the purchase - try again");
   };
   const restore = async () => {
     setBusy(true); setBuyNotice(null); setRestoreNotice(null);
     const r = await restorePurchases();
     setBusy(false);
-    setRestoreNotice(r === 'none' ? 'No earlier purchase found' : r === 'error' ? "Couldn't restore — try again" : null);
+    setRestoreNotice(r === 'none' ? 'No earlier purchase found' : r === 'error' ? "Couldn't restore - try again" : null);
   };
 
   return (
     <>
       <Row
         theme={theme} styles={styles} label="Remove ads"
-        note={removed ? 'Purchased — thank you!' : (buyNotice || 'One-time purchase')}
+        note={removed ? 'Purchased, thank you!' : (buyNotice || 'One-time purchase')}
       >
         {removed ? (
           <Ionicons name="checkmark-circle" size={24} color={theme.color.ok} />
@@ -202,8 +221,11 @@ function makeStyles(theme) {
       fontFamily: theme.font.bold, fontSize: 22,
       letterSpacing: 6, color: theme.color.ink, marginBottom: 32,
     },
+    // 360 -> 480: same scale-up as the other screens (see StatsScreen.jsx),
+    // proportioned down slightly since Settings' rows are plainer (a label
+    // and a switch/button) and don't need quite as much room as a stat list.
     list: {
-      width: '100%', maxWidth: 360,
+      width: '100%', maxWidth: 480,
       borderTopWidth: 1, borderColor: theme.color.gridLine,
     },
     row: {
@@ -221,7 +243,7 @@ function makeStyles(theme) {
     buyButtonBusy: { opacity: 0.5 },
     buyButtonText: { fontFamily: theme.font.bold, fontSize: 15, color: theme.color.paper, letterSpacing: 0.5 },
     devClear: { marginTop: 16 },
-    devSection: { width: '100%', maxWidth: 360, marginTop: 24 },
+    devSection: { width: '100%', maxWidth: 480, marginTop: 24 },
     devLabel: {
       fontFamily: theme.font.regular, fontSize: 13, color: theme.color.inkSoft,
       textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8,

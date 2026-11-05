@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, Pressable, StyleSheet, ActivityIndicator } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -10,7 +10,7 @@ import { useGame } from '../state/useGame';
 import { useCountdown } from '../state/useCountdown';
 import { dailyDateStr } from '../state/useDailyStats';
 import { formatClock, formatTimeMs } from '../utils/format';
-import { isRewardedAvailable, showRewarded } from '../ads';
+import { isRewardedAvailable, showRewarded, maybeShowDailyBeatTimeInterstitial } from '../ads';
 import { submitDailyTime } from '../leaderboards';
 import * as Engine from '../engine';
 
@@ -178,12 +178,21 @@ export default function DailyChallengeScreen({ difficulty, dailyStatsApi, statsA
 
   // The first tap on the board both starts the timer and counts as a real
   // move — not a separate "arm the clock" tap that gets thrown away.
-  const handleCellTap = (i) => {
+  //
+  // useCallback'd so this keeps a STABLE identity across the countdown's
+  // per-frame re-renders of this screen (see useCountdown.js) — otherwise
+  // Board's new React.memo (see Board.jsx) would never actually bail out,
+  // since a fresh onTapCell reference every frame looks like a changed prop.
+  const handleCellTap = useCallback((i) => {
     if (!started) setStarted(true);
     tap(i);
-  };
+  }, [started, tap]);
 
   const handleRetry = () => {
+    // Same cadence for both re-entrance paths — "Beat your time" (status
+    // 'won') and "Try again" after a loss — one shared counter, not two
+    // independent ones.
+    maybeShowDailyBeatTimeInterstitial();
     setAdNotice(null);
     setReady(false);
     setStarted(false);
@@ -204,7 +213,7 @@ export default function DailyChallengeScreen({ difficulty, dailyStatsApi, statsA
       if (timedOut) countdown.addTime(extraTimeMs);
       g.reviveAfterLoss();
     } else {
-      setAdNotice(result === 'unavailable' ? 'No ad available right now — try again shortly' : 'Watch the whole ad to continue');
+      setAdNotice(result === 'unavailable' ? 'No ad available right now - try again shortly' : 'Watch the whole ad to continue');
     }
   };
   const handleAbort = () => { setConfirmingAbort(false); onBack(); };
@@ -222,7 +231,7 @@ export default function DailyChallengeScreen({ difficulty, dailyStatsApi, statsA
     status === 'won' ? `Solved in ${formatTimeMs(timeLimitMs - countdown.remainingMs)}` :
     status === 'lost' ? (adNotice || (timedOut ? "Time's up" : 'Chain wiped you out')) :
     !started ? 'Tap a cell to start the timer' :
-    'Beat the clock — clear the board before time runs out';
+    'Beat the clock: clear the board before time runs out';
 
   const subtitle = today
     ? `Attempt ${attemptNumber} today${today.won ? ` · best ${formatTimeMs(today.bestTimeMs)}` : ''}`
@@ -303,7 +312,7 @@ export default function DailyChallengeScreen({ difficulty, dailyStatsApi, statsA
         theme={theme}
         visible={confirmingAbort}
         title="Quit this attempt?"
-        message="This attempt won't be scored — come back any time today to try again."
+        message="This attempt won't be scored. Come back any time today to try again."
         confirmLabel="Yes"
         onCancel={() => setConfirmingAbort(false)}
         onConfirm={handleAbort}

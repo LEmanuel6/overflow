@@ -11,10 +11,12 @@
       },
       "env": {
         "EXPO_PUBLIC_FORCE_TEST_ADS": "true"
-      }
+      },
+      "channel": "preview"
     },
     "production": {
-      "autoIncrement": true
+      "autoIncrement": true,
+      "channel": "production"
     }
   },
   "submit": {

@@ -6,7 +6,7 @@ import { useTheme } from '../theme';
 import Board from '../components/Board';
 import Hud from '../components/Hud';
 import ConfirmDialog from '../components/ConfirmDialog';
-import { livesForGrid, continueLivesForGrid } from '../engine';
+import { ladderLivesForGrid, continueLivesForGrid } from '../engine';
 import { showRewarded, showInterstitial } from '../ads';
 
 // An interstitial plays automatically the moment every Nth level is cleared.
@@ -99,10 +99,25 @@ export default function GameScreen({ g, stats, onMenu }) {
     continueNext();
   }, [status, adBusy, boardId, continueNext]);
 
+  // Shown only after `status` has been 'loading' for a bit — most level
+  // transitions resolve within the same tick (see useGame's continueNext/
+  // goToLevel), so this never has a chance to flip true for them. Only a
+  // genuinely slow generation (a 5x5 "spike" level's exact-solver pass)
+  // sits in 'loading' long enough to cross the delay.
+  const [showGenerating, setShowGenerating] = useState(false);
+  useEffect(() => {
+    if (status !== 'loading') { setShowGenerating(false); return; }
+    const t = setTimeout(() => setShowGenerating(true), 500);
+    return () => clearTimeout(t);
+  }, [status, state.level]);
+
+  const HINT_LEVELS = 5; // the "tap a cell..." hint only matters before a player's seen it happen a few times
   const banner =
     status === 'won' ? `Level ${state.level} cleared` :
     status === 'lost' ? (adNotice || 'Chain wiped you out') :
-    'Tap a cell — it empties and pushes onto its neighbours';
+    status === 'loading' ? (showGenerating ? 'Generating…' : '') :
+    state.level <= HINT_LEVELS ? 'Tap a cell: it empties and pushes onto its neighbours' :
+    '';
 
   const handleRetry = () => { setAdNotice(null); retry(); };
 
@@ -113,7 +128,7 @@ export default function GameScreen({ g, stats, onMenu }) {
     const result = await showRewarded();
     setAdBusy(false);
     if (result === 'earned') reviveAfterLoss();
-    else setAdNotice(result === 'unavailable' ? 'No ad available right now — try again shortly' : 'Watch the whole ad to continue');
+    else setAdNotice(result === 'unavailable' ? 'No ad available right now - try again shortly' : 'Watch the whole ad to continue');
   };
 
   const handleAbort = () => {
@@ -155,7 +170,7 @@ export default function GameScreen({ g, stats, onMenu }) {
       <View style={styles.container}>
         <Text style={styles.title}>OVERFLOW</Text>
 
-        <Hud level={state.level} lives={displayLives} maxLives={livesForGrid(state.n)} streak={stats.currentStreak} boardId={boardId} />
+        <Hud level={state.level} lives={displayLives} maxLives={ladderLivesForGrid(state.n)} streak={stats.currentStreak} boardId={boardId} />
 
         <Board
           state={state}
@@ -194,7 +209,7 @@ export default function GameScreen({ g, stats, onMenu }) {
         theme={theme}
         visible={confirmingAbort}
         title="Quit to menu?"
-        message="You'll lose progress on this board — your best level is safe either way."
+        message="You'll lose progress on this board. Your best level is safe either way."
         confirmLabel="Yes"
         onCancel={() => setConfirmingAbort(false)}
         onConfirm={handleAbort}

@@ -62,6 +62,18 @@ function livesForGrid(n) {
   return MAX_LIVES;
 }
 
+// Ladder-only override — Leon's call: the ladder's 4x4 band (levels
+// 101-500ish) started feeling too easy once the difficulty curve plateaus
+// there (see levelParams' capMin/capMax tables), and he wants that
+// addressed via lives rather than the number curve itself. Daily
+// Challenge's Intermediate tier is also a 4x4 board but goes through
+// newDailyGame (below), which still calls livesForGrid directly — it's a
+// short, single-attempt timed puzzle, not an extended ladder run, so this
+// tightening deliberately doesn't apply there.
+function ladderLivesForGrid(n) {
+  return n === 4 ? 3 : livesForGrid(n);
+}
+
 // Lives restored by a rewarded "continue" after losing a board: half the
 // board's normal count, rounded up (3x3=1, 4x4=2, 5x5=3, 6x6=4) — a real
 // second chance, not a full reset that would make the ad a free retry.
@@ -530,6 +542,21 @@ function levelParams(level) {
     const tMax = Math.max(0, level - 1);
     capMax = Math.min(CAP_MAX_CEILING, Math.round(CAP_MAX_BASE + CAP_MAX_K * tMax));
     capMin = Math.max(CAP_MIN_FLOOR, Math.round(CAP_MIN_BASE - CAP_MIN_K * tMin));
+    // tier1 already tightens capMin all the way to its floor by level 100
+    // (see tier1Params) — but this whole-game curve is computed fresh from
+    // the ABSOLUTE level number, so at level 101 it independently starts its
+    // OWN decline back from CAP_MIN_BASE (7), handing back 2 full points of
+    // tightness right as the grid also steps up to 4x4. The comment above
+    // (on the "two curves aren't continuous at the seam") assumed the
+    // grid-size jump would mask that regression — confirmed via direct play
+    // (Leon) that it does NOT: the board feels distinctly easier right after
+    // 100, not harder. Clamped here so capMin can never exceed what tier1
+    // already earned: it now holds flat at the floor from 101 onward until
+    // the natural curve would have gotten there anyway (~282), instead of
+    // bouncing up and re-declining. capMax is untouched — it's the "wider
+    // range = easier" lever (see the capMin-vs-capMax note above), so its
+    // own drop at this same seam doesn't compound the problem the same way.
+    capMin = Math.min(capMin, tier1Params(TIER1_LEVELS).capMin);
   }
   if (capMin <= CAP_MIN_FLOOR) {
     capMax = Math.max(capMax, n >= HARD_WALL_GRID ? CAP_MAX_SAFE_FLOOR_5X5 : CAP_MAX_SAFE_FLOOR_4X4);
@@ -555,7 +582,7 @@ function newGame(level = 1) {
     initialCells: board.cells,
     initialCaps: board.caps,
     level,
-    lives: livesForGrid(params.n),
+    lives: ladderLivesForGrid(params.n),
     taps: 0,
     status: 'play',
   };
@@ -573,7 +600,7 @@ function retry(state) {
     ...state,
     cells: state.initialCells,
     caps: state.initialCaps,
-    lives: livesForGrid(state.n),
+    lives: ladderLivesForGrid(state.n),
     taps: 0,
     status: 'play',
   };
@@ -704,7 +731,7 @@ function newDailyGame(dateStr, difficulty) {
 /* --------------------------------------------------------------- exports */
 
 const OverflowEngine = {
-  MAX_LIVES, livesForGrid, continueLivesForGrid,
+  MAX_LIVES, livesForGrid, continueLivesForGrid, ladderLivesForGrid,
   // lifecycle
   newGame, nextLevel, retry, revive, levelParams, gridSizeForLevel,
   // daily challenge
@@ -722,7 +749,7 @@ if (typeof window !== 'undefined') window.OverflowEngine = OverflowEngine;
 
 export default OverflowEngine;
 export {
-  MAX_LIVES, livesForGrid, continueLivesForGrid,
+  MAX_LIVES, livesForGrid, continueLivesForGrid, ladderLivesForGrid,
   newGame, nextLevel, retry, revive, levelParams, gridSizeForLevel,
   newDailyGame, isDailyBoardCached, DAILY_DIFFICULTIES, DAILY_DIFFICULTY_ORDER,
   tap,

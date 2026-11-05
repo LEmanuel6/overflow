@@ -1,23 +1,26 @@
-import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, Text, View, Animated, StyleSheet } from 'react-native';
 import { useTheme } from '../theme';
 
 const COUNT_TICK_MS = 26;     // interval between count-up ticks — fast, not delaying play
 const COUNT_MAX_TICKS = 8;    // cap ticks so a big jump still finishes quickly
-const POPUP_LIFE_MS = 650;    // how long a floating "+N" lives before it's removed
 const WIPE_FADE_MS = 480;     // win-wipe per-cell fade duration
 const REVEAL_FADE_MS = 420;   // board-load reveal per-cell fade duration
 const POP_UP_MS = 90;         // burst pop: quick bulge...
 const POP_DOWN_MS = 170;      // ...then shrink away
 
-// One board cell. Shows its value and its cap (value/cap), styled by state:
+// One board cell. Shows its value, styled by state:
 //  - empty: faint solid outline
 //  - at cap: amber
 //  - over cap: oxide red — driven by the LIVE animated number, so it turns
 //    red the instant the count-up actually crosses the cap, then pops
 //  - green (pushes nothing): green
-// Below that, a small "→N" shows how much this cell would leak to EACH
-// neighbour if tapped now (floor(value*ratio/4)).
+// A thin fill bar along the bottom shows how close value is to cap — this
+// replaced a literal "/cap" fraction + a "→push" readout (how much this
+// cell would leak to each neighbour if tapped now): three numbers per cell
+// read as clutter, so cap became a visual fill level instead, and push
+// was dropped outright (the floating "+N" popup already shows it live
+// when a neighbour actually receives it).
 //
 // Animation (self-contained, driven purely by watching the `value` prop):
 //  - when value RISES within the same board, the displayed number counts up
@@ -26,19 +29,24 @@ const POP_DOWN_MS = 170;      // ...then shrink away
 //    snaps instantly, but the cell itself starts hidden and sweeps in via
 //    `isRevealing` (see runBoardReveal in useGame.js) rather than popping in.
 //  - `isWiping` (win-sweep) fades the whole cell out for the wave-clear.
-function Cell({ value, cap, push, size, boardId, isGreen, isBursting, isWiping, isRevealing, locked, onPress }) {
+function Cell({ value, cap, push, size, boardId, isGreen, isBursting, isWiping, isRevealing, locked, index, onTapCell }) {
+  // Bound here (not by Board passing a pre-bound onPress) so Board can hand
+  // every Cell the SAME onTapCell reference instead of a fresh `() =>
+  // onTapCell(i)` closure per cell per render — that per-cell closure would
+  // have a new identity every single Board render, defeating this
+  // component's own React.memo below every time Board re-rendered (e.g. the
+  // Daily Challenge's per-frame countdown tick re-rendering the whole screen
+  // — see DailyChallengeScreen.jsx).
+  const handlePress = useCallback(() => onTapCell(index), [onTapCell, index]);
   const empty = value === 0;
   const theme = useTheme();
   const styles = useMemo(() => makeStyles(theme), [theme]);
 
   const [displayValue, setDisplayValueState] = useState(value);
-  const [popups, setPopups] = useState([]);
   const trueValueRef = useRef(value);
   const curValueRef = useRef(value);
   const boardIdRef = useRef(boardId);
   const countIntervalRef = useRef(null);
-  const popupIdRef = useRef(0);
-  const timeoutsRef = useRef([]);
   const fadeOpacity = useRef(new Animated.Value(1)).current;
   // Starts HIDDEN (0), not 1 — a fresh board entrance (GameScreen/
   // DailyChallengeScreen both fully unmount+remount on every navigation,
@@ -54,12 +62,14 @@ function Cell({ value, cap, push, size, boardId, isGreen, isBursting, isWiping, 
   // it to 1 on its own, independent of any boardId timing.
   const revealOpacity = useRef(new Animated.Value(0)).current;
   const popScale = useRef(new Animated.Value(1)).current;
+  // Brief highlight when this cell RECEIVES value (from a tap or a
+  // neighbour's burst) — replaced a floating "+N" popup. Quick up, slower
+  // fade down, same shape as the burst pop below but on fill/border
+  // brightness rather than scale, so "something changed here" reads as
+  // part of the board's own visual language instead of another number.
+  const receiveGlow = useRef(new Animated.Value(0)).current;
 
   const setDisplayValue = (v) => { curValueRef.current = v; setDisplayValueState(v); };
-  const scheduleRemovePopup = (id) => {
-    const t = setTimeout(() => setPopups((p) => p.filter((x) => x.id !== id)), POPUP_LIFE_MS);
-    timeoutsRef.current.push(t);
-  };
   const startCountUp = (from, to) => {
     if (countIntervalRef.current) clearInterval(countIntervalRef.current);
     const delta = to - from;
@@ -92,20 +102,18 @@ function Cell({ value, cap, push, size, boardId, isGreen, isBursting, isWiping, 
       boardIdRef.current = boardId;
       trueValueRef.current = value;
       if (countIntervalRef.current) { clearInterval(countIntervalRef.current); countIntervalRef.current = null; }
-      timeoutsRef.current.forEach(clearTimeout);
-      timeoutsRef.current = [];
-      setPopups([]);
       setDisplayValue(value);
       fadeOpacity.setValue(1);
       revealOpacity.setValue(0);
+      receiveGlow.setValue(0);
       return;
     }
     if (value === trueValueRef.current) return;
     if (value > trueValueRef.current) {
-      const delta = value - trueValueRef.current;
-      const id = popupIdRef.current++;
-      setPopups((p) => [...p, { id, amount: delta }]);
-      scheduleRemovePopup(id);
+      Animated.sequence([
+        Animated.timing(receiveGlow, { toValue: 0.18, duration: 80, useNativeDriver: true }),
+        Animated.timing(receiveGlow, { toValue: 0, duration: 350, useNativeDriver: true }),
+      ]).start();
       startCountUp(curValueRef.current, value);
     } else {
       setDisplayValue(value); // drained/emptied — snap, no animation
@@ -156,7 +164,6 @@ function Cell({ value, cap, push, size, boardId, isGreen, isBursting, isWiping, 
 
   useEffect(() => () => {
     if (countIntervalRef.current) clearInterval(countIntervalRef.current);
-    timeoutsRef.current.forEach(clearTimeout);
   }, []);
 
   // Colour tracks the LIVE animated number, not the final target value — so a
@@ -191,15 +198,17 @@ function Cell({ value, cap, push, size, boardId, isGreen, isBursting, isWiping, 
           ? styles.fillFull
           : styles.fillFilled;
 
-  // Scale text to the cell — boards can grow well past 5x5, shrinking `size`.
-  const numSize = Math.max(10, Math.min(31, size * 0.41));
-  const capSize = Math.max(7, Math.min(16, size * 0.24));
-  const pushSize = Math.max(7, Math.min(13, size * 0.20));
-  const popupSize = Math.max(10, Math.min(17, size * 0.27));
+  // Scale text to the cell — boards can grow well past 5x5, shrinking `size`,
+  // or well past a phone's old 420-wide cap on a tablet, growing it. Ceilings
+  // raised to match (were tuned for a 420-wide board's largest cell; the
+  // board can now reach 560 — see Board.jsx's BOARD_MAX_WIDTH) so a bigger
+  // cell gets bigger text instead of the same small number floating in a
+  // larger empty box.
+  const numSize = Math.max(10, Math.min(38, size * 0.41));
 
   return (
     <Pressable
-      onPress={empty || locked ? undefined : onPress}
+      onPress={empty || locked ? undefined : handlePress}
       style={[styles.cell, { width: size, height: size }]}
       android_disableSound
     >
@@ -207,47 +216,24 @@ function Cell({ value, cap, push, size, boardId, isGreen, isBursting, isWiping, 
         <Animated.View style={[styles.fill, fillStyle, { opacity: Animated.multiply(fadeOpacity, revealOpacity), transform: [{ scale: popScale }] }]}>
           {!empty && (
             <>
-              <View style={styles.row}>
-                <Text style={[styles.num, { fontSize: numSize }, atCap && styles.numFull, isGreen && styles.numGreen, over && styles.numBurst]}>
-                  {displayValue}
-                </Text>
-                <Text style={[styles.cap, { fontSize: capSize }]}>/{cap}</Text>
+              <Text style={[styles.num, { fontSize: numSize }, atCap && styles.numFull, isGreen && styles.numGreen, over && styles.numBurst]}>
+                {displayValue}
+              </Text>
+              <View style={styles.fullnessTrack}>
+                <View
+                  style={[
+                    styles.fullnessFill,
+                    over ? styles.fullnessBurst : atCap ? styles.fullnessFull : isGreen ? styles.fullnessGreen : styles.fullnessFilled,
+                    { width: `${Math.min(1, displayValue / cap) * 100}%` },
+                  ]}
+                />
               </View>
-              {!isGreen && (
-                <Text style={[styles.push, { fontSize: pushSize }]}>{'→'}{push}</Text>
-              )}
             </>
           )}
-          {popups.map((p) => (
-            <FloatingDelta key={p.id} amount={p.amount} fontSize={popupSize} styles={styles} />
-          ))}
+          <Animated.View style={[styles.receiveGlow, { opacity: receiveGlow }]} pointerEvents="none" />
         </Animated.View>
       </View>
     </Pressable>
-  );
-}
-
-// A "+N" that appears above the cell, rises, and fades away.
-function FloatingDelta({ amount, fontSize, styles }) {
-  const anim = useRef(new Animated.Value(0)).current;
-  const jitter = useRef((Math.random() - 0.5) * 10).current;
-
-  useEffect(() => {
-    Animated.timing(anim, { toValue: 1, duration: POPUP_LIFE_MS, useNativeDriver: true }).start();
-  }, [anim]);
-
-  const translateY = anim.interpolate({ inputRange: [0, 1], outputRange: [0, -24] });
-  const opacity = anim.interpolate({ inputRange: [0, 0.15, 1], outputRange: [0, 1, 0] });
-
-  return (
-    <Animated.Text
-      style={[
-        styles.floatDelta,
-        { fontSize, opacity, transform: [{ translateX: jitter }, { translateY }] },
-      ]}
-    >
-      +{amount}
-    </Animated.Text>
   );
 }
 
@@ -270,7 +256,6 @@ function makeStyles(theme) {
       alignItems: 'center',
       justifyContent: 'center',
     },
-    row: { flexDirection: 'row', alignItems: 'flex-end' },
     borderFilled: { borderColor: theme.color.vesselEdge },
     borderEmpty: { borderColor: theme.color.gridLine },
     borderFull: { borderColor: theme.color.signal },
@@ -285,12 +270,23 @@ function makeStyles(theme) {
     numFull: { color: theme.color.signal },
     numGreen: { color: theme.color.ok },
     numBurst: { color: theme.color.burst },
-    cap: { fontFamily: theme.font.bold, fontSize: 14, color: theme.color.inkSoft, marginBottom: 2, opacity: 0.75 },
-    push: { fontFamily: theme.font.semiBold, color: theme.color.inkSoft, opacity: 0.65, marginTop: 1 },
-    floatDelta: {
-      position: 'absolute', top: 0, alignSelf: 'center',
-      fontFamily: theme.font.bold, color: theme.color.signal,
-      zIndex: 5, elevation: 5,
+    // Replaces the old "/cap" + "→push" text — how close a cell is to
+    // bursting now reads as a fill level (colour already carries state;
+    // this adds "how far along," without a second number to parse).
+    fullnessTrack: {
+      position: 'absolute', left: 4, right: 4, bottom: 4, height: 6,
+      borderRadius: 3, backgroundColor: theme.color.gridLine, overflow: 'hidden',
+    },
+    fullnessFill: { height: '100%', borderRadius: 3 },
+    fullnessFilled: { backgroundColor: theme.color.inkSoft },
+    fullnessFull: { backgroundColor: theme.color.signal },
+    fullnessGreen: { backgroundColor: theme.color.ok },
+    fullnessBurst: { backgroundColor: theme.color.burst },
+    // Covers the whole cell, fully transparent at rest — receiveGlow (above)
+    // animates its opacity for a quick brightening flash.
+    receiveGlow: {
+      position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+      backgroundColor: theme.color.signal,
     },
   });
 }

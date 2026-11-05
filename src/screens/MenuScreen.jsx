@@ -3,7 +3,6 @@ import { View, Text, Pressable, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../theme';
-import ConfirmDialog from '../components/ConfirmDialog';
 import { ACHIEVEMENTS, ACHIEVEMENTS_BY_ID } from '../data/achievements';
 import { dailyDateStr, totalAttemptsForDay, completedCountForDay } from '../state/useDailyStats';
 import { DAILY_DIFFICULTY_ORDER } from '../engine';
@@ -47,20 +46,14 @@ const blobStyles = StyleSheet.create({
 });
 
 // Tray is rendered once, persistently, by App.js — not here (see Tray.jsx).
-export default function MenuScreen({ level, stats, onPlay, onReset, onAchievements, dailyStats, onDaily, overallPoints }) {
+export default function MenuScreen({ level, stats, onPlay, onHowToPlay, onAchievements, dailyStats, onDaily, overallPoints }) {
   const theme = useTheme();
   const styles = useMemo(() => makeStyles(theme), [theme]);
   // Daily-sourced achievements (source: 'daily') live in the separate
   // dailyStats blob, not the ladder stats blob — see achievements.js.
   const blobFor = (a) => (a.source === 'daily' ? dailyStats : stats);
   const unlockedCount = ACHIEVEMENTS.filter((a) => { const b = blobFor(a); return b && a.check(b); }).length;
-  const [confirmingReset, setConfirmingReset] = useState(false);
   const [dailyCardWidth, setDailyCardWidth] = useState(0);
-
-  const handleReset = () => {
-    setConfirmingReset(false);
-    onReset();
-  };
 
   const mergedUnlockedAt = { ...stats.unlockedAt, ...(dailyStats?.unlockedAt || {}) };
   const recent = Object.entries(mergedUnlockedAt)
@@ -74,7 +67,7 @@ export default function MenuScreen({ level, stats, onPlay, onReset, onAchievemen
   const completedToday = dailyStats ? completedCountForDay(dailyStats, today) : 0;
   const dailyAllComplete = completedToday >= DAILY_DIFFICULTY_ORDER.length;
   const dailySubtitle = totalAttemptsToday > 0
-    ? `${completedToday}/${DAILY_DIFFICULTY_ORDER.length} completed · ${totalAttemptsToday} attempt${totalAttemptsToday === 1 ? '' : 's'} today`
+    ? `${completedToday}/${DAILY_DIFFICULTY_ORDER.length} completed`
     : 'Not played yet today';
 
   return (
@@ -123,19 +116,18 @@ export default function MenuScreen({ level, stats, onPlay, onReset, onAchievemen
             />
           )}
           <View style={styles.dailyBadge}>
-            <Ionicons name="today-outline" size={20} color={theme.color.inkSoft} />
+            <Ionicons name="today-outline" size={18} color={theme.color.inkSoft} />
           </View>
           <View style={styles.dailyText}>
             <Text style={styles.dailyTitle} numberOfLines={1}>Daily Challenge</Text>
             <Text style={styles.dailySubtitle} numberOfLines={1}>{dailySubtitle}</Text>
           </View>
-          <Ionicons name="chevron-forward" size={16} color={dailyAllComplete ? theme.color.ok : theme.color.vesselEdge} />
         </Pressable>
 
         {(isLeaderboardsAvailable() || isLeaderboardsPreview()) && (
           <Pressable style={styles.dailyCard} onPress={showLevelLeaderboard}>
             <View style={styles.dailyBadge}>
-              <Ionicons name="trophy-outline" size={20} color={theme.color.inkSoft} />
+              <Ionicons name="trophy-outline" size={18} color={theme.color.inkSoft} />
             </View>
             <View style={styles.dailyText}>
               <Text style={styles.dailyTitle} numberOfLines={1}>Leaderboard</Text>
@@ -143,7 +135,6 @@ export default function MenuScreen({ level, stats, onPlay, onReset, onAchievemen
                 {isLeaderboardsAvailable() ? `${overallPoints} point${overallPoints === 1 ? '' : 's'}` : 'Preview'}
               </Text>
             </View>
-            <Ionicons name="chevron-forward" size={16} color={theme.color.vesselEdge} />
           </Pressable>
         )}
       </View>
@@ -157,22 +148,13 @@ export default function MenuScreen({ level, stats, onPlay, onReset, onAchievemen
           <Text style={styles.buttonText}>Play</Text>
         </Pressable>
 
-        <Pressable style={styles.resetButton} onPress={() => setConfirmingReset(true)}>
-          <Text style={styles.resetButtonText}>Reset</Text>
+        <Pressable style={styles.howToPlayButton} onPress={onHowToPlay} hitSlop={8}>
+          <Ionicons name="help-circle-outline" size={16} color={theme.color.inkSoft} />
+          <Text style={styles.howToPlayButtonText}>How to Play</Text>
         </Pressable>
 
         <PlayBlob theme={theme} />
       </View>
-
-      <ConfirmDialog
-        theme={theme}
-        visible={confirmingReset}
-        title="Reset progress?"
-        message="This clears your level, stats, achievements, and daily challenge history. Settings are kept."
-        confirmLabel="Reset"
-        onCancel={() => setConfirmingReset(false)}
-        onConfirm={handleReset}
-      />
     </SafeAreaView>
   );
 }
@@ -180,7 +162,13 @@ export default function MenuScreen({ level, stats, onPlay, onReset, onAchievemen
 function makeStyles(theme) {
   return StyleSheet.create({
     safe: { flex: 1, backgroundColor: theme.color.paper },
+    // width/maxWidth/alignSelf: without a cap this stretched edge-to-edge on
+    // a tablet — fine for a single-row border, but it meant the badges
+    // inside just spread further apart rather than the section actually
+    // reading as "bigger." Capped and centered to match the same scale-up
+    // as the rest of the app (see StatsScreen.jsx's identical comment).
     recent: {
+      width: '100%', maxWidth: 560, alignSelf: 'center',
       alignItems: 'center', paddingHorizontal: 20, paddingTop: 16, paddingBottom: 16,
       borderBottomWidth: 1, borderColor: theme.color.gridLine,
     },
@@ -210,10 +198,16 @@ function makeStyles(theme) {
     // so the row reads as one consistent neutral pair; the daily card alone
     // keeps its progress colouring (fill bar, green border/chevron once all
     // 4 are complete) since that's informational, not just decorative.
-    ctaRow: { flexDirection: 'row', marginHorizontal: 20, marginTop: 16, gap: 10 },
+    // width/maxWidth/alignSelf: same scale-up cap as `recent` above — without
+    // it the two cards just stretched further apart edge-to-edge on a tablet
+    // instead of the row reading as genuinely bigger.
+    ctaRow: {
+      flexDirection: 'row', width: '100%', maxWidth: 560, alignSelf: 'center',
+      paddingHorizontal: 20, marginTop: 16, gap: 10,
+    },
     dailyCard: {
-      flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8,
-      padding: 10,
+      flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6,
+      padding: 8,
       backgroundColor: theme.color.vessel, borderWidth: 1, borderColor: theme.color.vesselEdge,
       borderRadius: theme.radius, overflow: 'hidden',
     },
@@ -231,11 +225,11 @@ function makeStyles(theme) {
     // card's own rounded corners.
     dailyFill: { position: 'absolute', left: 0, top: 0, bottom: 0 },
     dailyBadge: {
-      width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center',
+      width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center',
       backgroundColor: theme.color.paper, borderWidth: 1, borderColor: theme.color.vesselEdge,
     },
-    dailyText: { flex: 1 },
-    dailyTitle: { fontFamily: theme.font.bold, fontSize: 14, color: theme.color.ink },
+    dailyText: { flex: 1, minWidth: 0 },
+    dailyTitle: { fontFamily: theme.font.bold, fontSize: 13, color: theme.color.ink },
     dailySubtitle: { fontFamily: theme.font.regular, fontSize: 12, color: theme.color.inkSoft, marginTop: 2 },
     content: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 16 },
     title: {
@@ -255,9 +249,12 @@ function makeStyles(theme) {
       paddingVertical: 14, paddingHorizontal: 40, borderRadius: theme.radius,
     },
     buttonText: { fontFamily: theme.font.bold, fontSize: 16, color: theme.color.paper, letterSpacing: 1 },
-    resetButton: { marginTop: 14, paddingVertical: 6, paddingHorizontal: 12 },
-    resetButtonText: {
-      fontFamily: theme.font.semiBold, fontSize: 14, color: theme.color.burst, letterSpacing: 0.5,
+    howToPlayButton: {
+      flexDirection: 'row', alignItems: 'center', gap: 6,
+      marginTop: 14, paddingVertical: 6, paddingHorizontal: 12,
+    },
+    howToPlayButtonText: {
+      fontFamily: theme.font.semiBold, fontSize: 14, color: theme.color.inkSoft, letterSpacing: 0.5,
     },
   });
 }

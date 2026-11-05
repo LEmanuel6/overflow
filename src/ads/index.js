@@ -216,6 +216,20 @@ export async function maybeShowQuitInterstitial() {
   await showInterstitial();
 }
 
+// Daily Challenge's retry re-entrance — both "Beat your time" (after a win)
+// and "Try again" (after a loss) call this from the same handleRetry, one
+// shared counter for either path — Leon's call: on the FIRST retry, then
+// every 5th after that (retry #1, #6, #11, ...). In-memory only, same
+// tradeoff as lastQuitAdAt above — resets on relaunch, which is fine since
+// this is just pacing, not a hard limit.
+let dailyBeatTimeRetries = 0;
+
+export async function maybeShowDailyBeatTimeInterstitial() {
+  if (!Ads) return;
+  dailyBeatTimeRetries++;
+  if ((dailyBeatTimeRetries - 1) % 5 === 0) await showInterstitial();
+}
+
 // Whether Settings should offer the Ad Inspector row — dev builds, or any
 // build with EXPO_PUBLIC_FORCE_TEST_ADS set (currently just `preview`).
 // Never true in a real production build.
@@ -239,7 +253,7 @@ export async function openAdInspector() {
   if (!Ads) return { ok: false, reason: 'No native ads module in this build.' };
   const ready = await initAds();
   if (!ready) {
-    return { ok: false, reason: `initAds() didn't complete: ${lastInitFailureReason || 'unknown — check logs'}` };
+    return { ok: false, reason: `initAds() didn't complete: ${lastInitFailureReason || 'unknown - check logs'}` };
   }
   try {
     await Ads.default().openAdInspector();

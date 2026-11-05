@@ -17,10 +17,29 @@
 import { useState, useRef, useCallback, useEffect, useLayoutEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Engine from '../engine';
-import { playTap, playBurst, playSweepTick } from '../sound';
+import { playTap, playBurst, playWhoosh } from '../sound';
 import { impactLight, impactMedium, impactHeavy, notifySuccess, notifyError } from '../haptics';
 
 const STORE_KEY = 'overflow:v1';
+
+// A blank, inert placeholder for a ladder level that's still generating —
+// same shape/spirit as DailyChallengeScreen's own placeholderState. Most
+// levels generate instantly (plain randomized retries), but a 5x5 "spike"
+// level (periodic after level 500 — see engine's gridSizeForLevel) runs the
+// exact solver once to prove it's clearable, a genuinely heavy synchronous
+// call. `n` only needs gridSizeForLevel (instant, no generation involved),
+// so the placeholder can already show the right grid size/lives/level
+// number while the actual board is still being built. status 'loading'
+// isn't 'play', so tap() already treats it as fully inert with no
+// special-casing needed.
+function placeholderLadderState(level, n) {
+  const size = n * n;
+  return {
+    n, ratio: 0.88,
+    cells: new Array(size).fill(0), caps: new Array(size).fill(1),
+    level, lives: Engine.ladderLivesForGrid(n), taps: 0, status: 'loading',
+  };
+}
 
 // animation timing (ms)
 // Per burst: the over-cap number is revealed and held (RISE_HOLD, long enough
@@ -246,10 +265,13 @@ export function useGame(statsApi, opts = {}) {
     const n = wonState.n;
     const { bands, keys, stagger } = diagonalBands(cells.length, n, WIPE_STAGGER_MAX, WIPE_TOTAL_TARGET);
 
+    // One whoosh for the whole sweep, not one tick per band (see sound's
+    // playWhoosh) — fired here rather than inside the k===0 band's own
+    // after(0, ...) below so it isn't tied to that band's timing.
+    playWhoosh();
     keys.forEach((band, k) => {
       after(k * stagger, () => {
         setWiping((w) => [...w, ...bands.get(band)]);
-        playSweepTick();
       });
     });
 
@@ -265,19 +287,19 @@ export function useGame(statsApi, opts = {}) {
   // Sweep a freshly-loaded board in, same diagonal wave as the wipe but in
   // reverse (arriving instead of leaving). Cell.jsx starts a fresh board's
   // cells hidden (see its boardId effect) and fades each one in as its index
-  // is added here. `silent` skips the per-band tick sound — used when
-  // retry()/restart() etc. are resetting the board as a side effect of the
-  // player LEAVING the screen (abort-to-menu), not watching it: GameScreen
-  // stays mounted (display:none) when not the active tab, so this reveal
-  // still runs invisibly in the background either way, but without `silent`
-  // it would also play an audible sweep for an animation nobody can see.
+  // is added here. `silent` skips the whoosh — used when retry()/restart()
+  // etc. are resetting the board as a side effect of the player LEAVING the
+  // screen (abort-to-menu), not watching it: GameScreen stays mounted
+  // (display:none) when not the active tab, so this reveal still runs
+  // invisibly in the background either way, but without `silent` it would
+  // also play an audible whoosh for an animation nobody can see.
   const runBoardReveal = useCallback((n, { silent = false, onDone } = {}) => {
     setRevealing([]);
     const { bands, keys, stagger } = diagonalBands(n * n, n, REVEAL_STAGGER_MAX, REVEAL_TOTAL_TARGET);
+    if (!silent) playWhoosh();
     keys.forEach((band, k) => {
       after(k * stagger, () => {
         setRevealing((r) => [...r, ...bands.get(band)]);
-        if (!silent) playSweepTick();
       });
     });
     if (onDone) after(keys.length * stagger + REVEAL_SETTLE_MS, onDone);
@@ -404,12 +426,23 @@ export function useGame(statsApi, opts = {}) {
   const continueNext = useCallback(({ silent = false } = {}) => {
     clearTimers();
     beginBoard();
-    const ng = Engine.nextLevel(state);
-    setState(ng); setDisplay(ng.cells); setBursting([]); setWiping([]); setStatus('play'); setBusy(false);
-    setDisplayLives(ng.lives);
-    setBoardId((id) => id + 1);
-    persist(ng.level);
-    runBoardReveal(ng.n, { silent });
+    const nextLevelNum = state.level + 1;
+    const n = Engine.gridSizeForLevel(nextLevelNum);
+    setState(placeholderLadderState(nextLevelNum, n));
+    setDisplay(new Array(n * n).fill(0));
+    setBursting([]); setWiping([]); setBusy(false);
+    // Deferred a tick (not run inline) so the placeholder above actually
+    // gets to paint first — see GameScreen's "Generating…" text, itself
+    // gated behind a short delay so the overwhelming majority of (instant)
+    // transitions never show it at all.
+    setTimeout(() => {
+      const ng = Engine.nextLevel(state);
+      setState(ng); setDisplay(ng.cells); setStatus('play');
+      setDisplayLives(ng.lives);
+      setBoardId((id) => id + 1);
+      persist(ng.level);
+      runBoardReveal(ng.n, { silent });
+    }, 0);
   }, [state, persist, runBoardReveal, beginBoard]);
 
   // Dev-only: jump straight to an arbitrary level, to test a specific
@@ -418,12 +451,18 @@ export function useGame(statsApi, opts = {}) {
   const goToLevel = useCallback((level) => {
     clearTimers();
     beginBoard();
-    const g = Engine.newGame(level);
-    setState(g); setDisplay(g.cells); setBursting([]); setWiping([]); setStatus('play'); setBusy(false);
-    setDisplayLives(g.lives);
-    setBoardId((id) => id + 1);
-    persist(level);
-    runBoardReveal(g.n);
+    const n = Engine.gridSizeForLevel(level);
+    setState(placeholderLadderState(level, n));
+    setDisplay(new Array(n * n).fill(0));
+    setBursting([]); setWiping([]); setBusy(false);
+    setTimeout(() => {
+      const g = Engine.newGame(level);
+      setState(g); setDisplay(g.cells); setStatus('play');
+      setDisplayLives(g.lives);
+      setBoardId((id) => id + 1);
+      persist(level);
+      runBoardReveal(g.n);
+    }, 0);
   }, [persist, runBoardReveal, beginBoard]);
 
   // Rewarded continue: undo a loss and put the same board back in play (the

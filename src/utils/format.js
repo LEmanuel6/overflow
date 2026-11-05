@@ -3,7 +3,7 @@ export function formatNumber(n) {
 }
 
 export function formatDuration(ms) {
-  if (ms == null) return '—';
+  if (ms == null) return '-';
   const totalSeconds = Math.round(ms / 1000);
   if (totalSeconds < 60) return `${totalSeconds}s`;
   const totalMinutes = Math.floor(totalSeconds / 60);
@@ -15,7 +15,7 @@ export function formatDuration(ms) {
 }
 
 export function formatPercent(part, whole) {
-  if (!whole) return '—';
+  if (!whole) return '-';
   return `${Math.round((part / whole) * 100)}%`;
 }
 
@@ -35,7 +35,7 @@ export function formatClock(ms) {
 // (the daily challenge's banner and hub tile), as opposed to formatClock's
 // coarser centiseconds which just match the countdown's own tick rate.
 export function formatTimeMs(ms) {
-  if (ms == null) return '—';
+  if (ms == null) return '-';
   const clamped = Math.max(0, Math.floor(ms));
   const m = Math.floor(clamped / 60000);
   const s = Math.floor((clamped % 60000) / 1000);

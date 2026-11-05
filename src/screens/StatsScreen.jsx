@@ -30,7 +30,7 @@ export default function StatsScreen({ stats, dailyStats, onBack }) {
         <Section styles={styles} title="Skill" rows={[
           { k: 'Flawless clears', v: formatNumber(stats.flawlessClears) },
           { k: 'Best flawless streak', v: formatNumber(stats.bestFlawlessStreak) },
-          { k: 'Fewest taps to clear', v: stats.fewestTapsToClear == null ? '—' : formatNumber(stats.fewestTapsToClear) },
+          { k: 'Fewest taps to clear', v: stats.fewestTapsToClear == null ? '-' : formatNumber(stats.fewestTapsToClear) },
           { k: 'Most lives kept on a clear', v: formatNumber(stats.mostLivesRemainingOnClear) },
         ]} />
 
@@ -90,7 +90,11 @@ function makeStyles(theme) {
     safe: { flex: 1, backgroundColor: theme.color.paper },
     scroll: { flex: 1 },
     container: { alignItems: 'center', paddingHorizontal: 24, paddingVertical: 24 },
-    section: { width: '100%', maxWidth: 420, marginBottom: 20 },
+    // 420 -> 560: was a phone-only cap, pinning every row's width regardless
+    // of screen size — raised to match the same scale-up as Board.jsx's
+    // BOARD_MAX_WIDTH, so this list actually grows on a tablet instead of
+    // sitting at phone width surrounded by dead space.
+    section: { width: '100%', maxWidth: 560, marginBottom: 20 },
     sectionTitle: {
       fontFamily: theme.font.bold, fontSize: 18, color: theme.color.inkSoft,
       textTransform: 'uppercase', letterSpacing: 1.5, marginBottom: 6,

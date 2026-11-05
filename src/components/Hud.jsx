@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, Animated, Easing } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useTheme } from '../theme';
 import { MAX_LIVES } from '../engine';
+import { BOARD_MAX_WIDTH } from './Board';
 
 // Tuned so a single life lost (~a 10-slot bar's smallest step) reads as a
 // quick, snappy move, while a multi-burst chain (several lives at once —
@@ -141,7 +142,7 @@ function Stat({ styles, k, v, danger }) {
 
 function makeStyles(theme) {
   return StyleSheet.create({
-    row: { flexDirection: 'row', justifyContent: 'space-between', width: '100%', maxWidth: 420, alignSelf: 'center', marginBottom: 16 },
+    row: { flexDirection: 'row', justifyContent: 'space-between', width: '100%', maxWidth: BOARD_MAX_WIDTH, alignSelf: 'center', marginBottom: 16 },
     stat: { alignItems: 'center', flex: 1 },
     k: { fontFamily: theme.font.semiBold, fontSize: 14, color: theme.color.inkSoft, textTransform: 'uppercase', letterSpacing: 1 },
     v: { fontFamily: theme.font.bold, fontSize: 22, color: theme.color.ink, marginTop: 2 },

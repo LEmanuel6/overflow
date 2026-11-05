@@ -102,7 +102,7 @@ function TrackRow({ styles, theme, group, stats, onPress }) {
         <View style={[styles.badge, complete && styles.badgeUnlocked]}>
           <Ionicons name={activeItem.icon} size={17} color={complete ? theme.color.ok : theme.color.inkSoft} />
         </View>
-        <Text style={[styles.cardTitle, styles.cardTitleGrow, !complete && styles.dim]}>{meta.title}</Text>
+        <Text style={[styles.cardTitle, styles.cardTitleGrow, !complete && styles.dim]} numberOfLines={2}>{meta.title}</Text>
         <Text style={styles.trackCount}>{unlockedCount}/{items.length}</Text>
         <Ionicons name="chevron-forward" size={18} color={theme.color.inkSoft} />
       </View>
@@ -129,7 +129,7 @@ function Achievement({ styles, theme, achievement, unlocked, stats }) {
         <View style={[styles.badge, unlocked && styles.badgeUnlocked]}>
           <Ionicons name={achievement.icon} size={17} color={unlocked ? theme.color.ok : theme.color.inkSoft} />
         </View>
-        <Text style={[styles.cardTitle, !unlocked && styles.dim]}>{achievement.title}</Text>
+        <Text style={[styles.cardTitle, styles.cardTitleGrow, !unlocked && styles.dim]} numberOfLines={2}>{achievement.title}</Text>
       </View>
       <Text style={[styles.cardDesc, !unlocked && styles.dim]}>{achievement.description}</Text>
       {progress && (
@@ -149,7 +149,9 @@ function makeStyles(theme) {
     safe: { flex: 1, backgroundColor: theme.color.paper },
     scroll: { flex: 1 },
     container: { alignItems: 'center', paddingHorizontal: 24, paddingVertical: 24 },
-    section: { width: '100%', maxWidth: 420, marginBottom: 20 },
+    // 420 -> 560: see StatsScreen.jsx's identical comment — same scale-up,
+    // matching Board.jsx's BOARD_MAX_WIDTH.
+    section: { width: '100%', maxWidth: 560, marginBottom: 20 },
     sectionTitle: {
       fontFamily: theme.font.bold, fontSize: 18, color: theme.color.inkSoft,
       textTransform: 'uppercase', letterSpacing: 1.5, marginBottom: 8,

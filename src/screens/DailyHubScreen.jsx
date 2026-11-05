@@ -60,7 +60,7 @@ export default function DailyHubScreen({ dailyStatsApi, onBack, onSelectDifficul
                     <Text style={styles.cardSubtitle}>Total Attempts: {day.attempts}</Text>
                   </>
                 ) : (
-                  <Text style={styles.cardSubtitle}>{day.attempts} attempt{day.attempts === 1 ? '' : 's'} today — keep going</Text>
+                  <Text style={styles.cardSubtitle}>{day.attempts} attempt{day.attempts === 1 ? '' : 's'} today, keep going</Text>
                 )}
               </View>
               {(isDailyLeaderboardAvailable(id) || isDailyLeaderboardPreview(id)) && (
@@ -88,7 +88,8 @@ function makeStyles(theme) {
     container: { alignItems: 'center', paddingHorizontal: 24, paddingVertical: 24 },
     card: {
       flexDirection: 'row', alignItems: 'center', gap: 12,
-      width: '100%', maxWidth: 420, marginBottom: 12, padding: 14,
+      // 420 -> 560: see StatsScreen.jsx's identical comment.
+      width: '100%', maxWidth: 560, marginBottom: 12, padding: 14,
       backgroundColor: theme.color.vessel, borderWidth: 1, borderColor: theme.color.vesselEdge,
       borderRadius: theme.radius,
     },

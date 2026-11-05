@@ -21,7 +21,10 @@
       "package": "com.leonemanuel.overflow",
       "backgroundColor": "#1B1A17",
       "allowBackup": false,
-      "versionCode": 10
+      "versionCode": 12,
+      "permissions": [
+        "android.permission.MODIFY_AUDIO_SETTINGS"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -40,7 +43,7 @@
           "backgroundColor": "#1B1A17",
           "image": "./assets/splash.png",
           "resizeMode": "contain",
-          "imageWidth": 284
+          "imageWidth": 426
         }
       ],
       [
@@ -57,7 +60,18 @@
           "appId": "222820228545"
         }
       ],
-      "expo-audio"
-    ]
+      [
+        "expo-audio",
+        {
+          "recordAudioAndroid": false
+        }
+      ]
+    ],
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/522be79d-5719-4334-852b-84cae200962d"
+    }
   }
 }

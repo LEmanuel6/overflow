@@ -18,6 +18,7 @@ import DailyChallengeScreen from './src/screens/DailyChallengeScreen';
 import SettingsScreen from './src/screens/SettingsScreen';
 import StatsScreen from './src/screens/StatsScreen';
 import AchievementsScreen from './src/screens/AchievementsScreen';
+import HowToPlayScreen from './src/screens/HowToPlayScreen';
 import Tray from './src/components/Tray';
 import AchievementToast from './src/components/AchievementToast';
 import { useGame } from './src/state/useGame';
@@ -51,7 +52,7 @@ import { ThemeProvider, darkTheme, lightTheme } from './src/theme';
 // fresh mount — the one-time mount/layout cost happens once, up front,
 // during app launch, where a brief delay is already expected (it's covered
 // by the font-loading gate below).
-const TRAY_SCREENS = new Set(['menu', 'stats', 'achievements', 'settings', 'dailyHub']);
+const TRAY_SCREENS = new Set(['menu', 'stats', 'achievements', 'settings', 'dailyHub', 'howToPlay']);
 
 const FULL = { flex: 1 };
 const HIDDEN = { display: 'none' };
@@ -86,27 +87,37 @@ export default function App() {
     ...Ionicons.font,
   });
 
-  // Starts the ads SDK (consent + init + preloading the interstitial and
-  // rewarded ad) as early as possible. This used to happen implicitly via
-  // AdBanner mounting on the Menu screen; removing the banner (Leon's call)
-  // also removed that free head start, and showInterstitial() gives the
-  // FIRST-ever interstitial request zero wait time for a load in progress
-  // (by design — gameplay should never stall on a slow ad), so without an
-  // early trigger the level-10 interstitial would reliably find nothing
-  // loaded yet and silently show nothing. Firing it here instead gives
-  // consent + init + the first ad request the whole rest of the session to
-  // finish before it's actually needed.
-  useEffect(() => { initAds(); }, []);
-
-  // Warms up the audio players as early as possible — same reasoning as
-  // initAds() above, but actually AWAITED this time: a staggered/fixed-delay
-  // warmup still wasn't reliably done before a player's first tap or the
-  // board's entrance-reveal sweep. soundsReady feeds the loading-screen gate
-  // below, the same way dailyWarmupDone does — launch holds until the sounds
-  // that fire almost immediately (sweep, tap) are actually loaded, not just
-  // "given a head start."
+  // Warms up the audio players as early as possible — awaited, not just
+  // given a head start: a staggered/fixed-delay warmup still wasn't reliably
+  // done before a player's first tap or the board's entrance-reveal sweep.
+  // soundsReady feeds the loading-screen gate below, the same way
+  // dailyWarmupDone does — launch holds until the sounds that fire almost
+  // immediately (whoosh, tap) are actually loaded, not just "given a head
+  // start."
   const [soundsReady, setSoundsReady] = useState(false);
   useEffect(() => { preloadSounds().then(() => setSoundsReady(true)); }, []);
+
+  // Starts the ads SDK (consent + init + preloading the interstitial and
+  // rewarded ad) — deliberately AFTER soundsReady, not at mount. Consent
+  // gathering (a UMP network round-trip) + mobileAds().initialize() + the
+  // first ad request is itself several concurrent seconds of native/network
+  // work; firing it at mount — the same instant as sound decode/priming
+  // above — raced the two against each other and was found to make burst
+  // sounds go silent for several seconds right after launch, recovering on
+  // their own once ad init settled down. Waiting for soundsReady costs
+  // nothing in practice (ads aren't shown until level 10 or on a quit,
+  // minutes into a real session) but keeps ad init out of the one window
+  // that actually mattered. This used to happen implicitly via AdBanner
+  // mounting on the Menu screen; removing the banner (Leon's call) also
+  // removed that free head start, and showInterstitial() gives the
+  // FIRST-ever interstitial request zero wait time for a load in progress
+  // (by design — gameplay should never stall on a slow ad), so without an
+  // early-ish trigger the level-10 interstitial would reliably find nothing
+  // loaded yet and silently show nothing.
+  useEffect(() => {
+    if (!soundsReady) return;
+    initAds();
+  }, [soundsReady]);
 
   // Sound/haptics are module-level toggles (see sound/index.js,
   // haptics/index.js) rather than props threaded through useGame — both
@@ -164,7 +175,6 @@ export default function App() {
     (sum, id) => sum + (dailyStatsApi.dailyStats.difficulties[id]?.daysWon || 0),
     0,
   );
-  useEffect(() => { submitLevelScore(overallPoints); }, [overallPoints]);
 
   // Hides the native splash once fonts are actually ready — the counterpart
   // to preventAutoHideAsync() above. Runs every render but hideAsync() is a
@@ -174,33 +184,31 @@ export default function App() {
     if (fontsLoaded) SplashScreen.hideAsync().catch(() => {});
   }, [fontsLoaded]);
 
-  // Pre-generates today's daily-challenge boards before the app is usable —
-  // Leon's explicit choice, after the previous (background, non-blocking)
-  // version let the Menu render and accept taps while Expert/Master's board
-  // generation (a real exact-solver pass, ~200-450ms+ each, worse on a
-  // phone) was still running: that's a genuinely heavy synchronous JS call,
-  // so a tap landing mid-generation was silently swallowed — the Daily
-  // Challenge button looked unresponsive rather than "still loading". The
-  // fix offered instead (only preload the two cheap tiers, let Expert/
-  // Master lazy-load with their existing spinner) was declined in favour of
-  // this: hold launch behind LoadingScreen's progress bar until all 4 are
-  // ready, so nothing is ever tappable-but-dead. Costs every launch however
-  // long this takes, even for a player who never opens Daily Challenge that
-  // session — a deliberate, known tradeoff, not an oversight.
-  //
-  // setTimeout(0) between EACH tier still yields the thread every step, so
-  // warmedCount's updates actually get a chance to paint (the progress bar
-  // moving) rather than batching invisibly into one jump at the end.
+  // Pre-generates today's cheap daily-challenge boards (Beginner/
+  // Intermediate only) before the app is usable. Expert/Master are
+  // deliberately NOT warmed here, even in the background: each is a genuine
+  // exact-solver pass on a full 5x5/6x6 board (~200-450ms+, worse on a
+  // phone), and that's a synchronous call on the single JS thread — running
+  // it in the "background" doesn't make it non-blocking, it just blocks
+  // whatever screen happens to be up at the time (the Menu) instead of a
+  // loading screen, so every touch silently did nothing for that stretch.
+  // Letting the Menu render and accept taps while something that heavy runs
+  // in an effect is what caused that freeze. Expert/Master are generated
+  // lazily instead, only when a player actually opens that tier —
+  // DailyChallengeScreen already has its own per-screen loading state for
+  // exactly this (see its placeholderState/alreadyCached handling), where a
+  // brief spinner is expected rather than a frozen Menu.
+  const BLOCKING_DAILY_ORDER = DAILY_DIFFICULTY_ORDER.filter((id) => id !== 'expert' && id !== 'master');
   const [warmedCount, setWarmedCount] = useState(0);
-  const dailyWarmupDone = warmedCount >= DAILY_DIFFICULTY_ORDER.length;
+  const dailyWarmupDone = warmedCount >= BLOCKING_DAILY_ORDER.length;
   useEffect(() => {
     let cancelled = false;
     const today = dailyDateStr();
     let i = 0;
     const warmNext = () => {
       if (cancelled) return;
-      if (i >= DAILY_DIFFICULTY_ORDER.length) return;
-      const difficulty = DAILY_DIFFICULTY_ORDER[i++];
+      if (i >= BLOCKING_DAILY_ORDER.length) return;
+      const difficulty = BLOCKING_DAILY_ORDER[i++];
       if (!isDailyBoardCached(today, difficulty)) newDailyGame(today, difficulty);
       setWarmedCount(i);
       setTimeout(warmNext, 0);
@@ -222,13 +230,26 @@ export default function App() {
     return () => clearTimeout(t);
   }, [dailyWarmupDone, soundsReady]);
 
+  // Deferred until the loading screen is actually gone — this is what
+  // triggers the native Play Games sign-in (see leaderboards/index.js's
+  // ensureSignedIn), which shows its own "Welcome back" overlay/animation.
+  // Firing it at mount (the old behaviour) meant that popup had to animate
+  // in at the exact same moment initAds()/preloadSounds()/font loading/daily
+  // board warmup were all hammering the JS thread — Leon reported the popup
+  // visibly stuttering/lagging on launch because of that contention. Waiting
+  // for warmupSettled gives it a free thread to animate on.
+  useEffect(() => {
+    if (!warmupSettled) return;
+    submitLevelScore(overallPoints);
+  }, [warmupSettled, overallPoints]);
+
   if (!fontsLoaded || !warmupSettled) {
     // fontsLoaded alone still gates the NATIVE splash (see hideAsync()
     // above) — this screen is what takes over the instant that hides, so
     // the native splash's own hold doesn't need to (and shouldn't) wait on
     // dailyWarmupDone too, or there'd be no progress bar to show for most
     // of the wait.
-    return <LoadingScreen progress={warmedCount / DAILY_DIFFICULTY_ORDER.length} />;
+    return <LoadingScreen progress={warmedCount / BLOCKING_DAILY_ORDER.length} />;
   }
 
   const goMenu = () => setScreen('menu');
@@ -236,6 +257,7 @@ export default function App() {
   const goAchievements = () => setScreen('achievements');
   const goSettings = () => setScreen('settings');
   const goDailyHub = () => setScreen('dailyHub');
+  const goHowToPlay = () => setScreen('howToPlay');
   const goDailyPlay = (difficulty) => { setDailyDifficulty(difficulty); setScreen('dailyPlay'); };
 
   // Leaving an actual attempt (ladder or daily) — win, loss, or a mid-game
@@ -246,12 +268,6 @@ export default function App() {
   // point, not just browsing between menus.
   const leaveGame = () => { maybeShowQuitInterstitial(); goMenu(); };
   const leaveDailyPlay = () => { maybeShowQuitInterstitial(); goDailyHub(); };
-
-  const onReset = () => {
-    g.restart();
-    statsApi.reset();
-    dailyStatsApi.reset();
-  };
 
   // Dev-only: jump straight to a level from Settings, to test a specific
   // difficulty band without grinding there.
@@ -279,12 +295,15 @@ export default function App() {
                 level={g.state.level}
                 stats={statsApi.stats}
                 onPlay={() => setScreen('game')}
-                onReset={onReset}
+                onHowToPlay={goHowToPlay}
                 dailyStats={dailyStatsApi.dailyStats}
                 onDaily={goDailyHub}
                 onAchievements={goAchievements}
                 overallPoints={overallPoints}
               />
+            </View>
+            <View style={screen === 'howToPlay' ? FULL : HIDDEN}>
+              <HowToPlayScreen onBack={goMenu} />
             </View>
             {screen === 'game' && <GameScreen g={g} stats={statsApi.stats} onMenu={leaveGame} />}
             <View style={screen === 'dailyHub' ? FULL : HIDDEN}>
