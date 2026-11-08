@@ -21,7 +21,7 @@
       "package": "com.leonemanuel.overflow",
       "backgroundColor": "#1B1A17",
       "allowBackup": false,
-      "versionCode": 13,
+      "versionCode": 14,
       "permissions": [
         "android.permission.MODIFY_AUDIO_SETTINGS"
       ]
