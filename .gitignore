@@ -7,9 +7,11 @@ dist/
 web-build/
 expo-env.d.ts
 
-# Native (if the project is ever ejected / prebuilt)
-ios/
-android/
+# Native (if the project is ever ejected / prebuilt) — anchored to the repo
+# root so this doesn't also swallow a local Expo module's own android/ios
+# source dirs under modules/ (e.g. modules/expo-game-sfx/android).
+/ios/
+/android/
 
 # EAS
 .eas/
