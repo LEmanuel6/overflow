@@ -122,6 +122,17 @@ export function useGame(statsApi, opts = {}) {
   const [displayLives, setDisplayLives] = useState(() => state.lives);
   const timers = useRef([]);
 
+  // Temporary debug aid (dev builds only) — board generation is unseeded
+  // for the ladder (unlike the daily challenge), so there's no way to
+  // reconstruct what a tester is actually looking at from the level number
+  // alone. Logs the live board on every new generation so it can be copied
+  // out of the browser console and run through a solver.
+  useEffect(() => {
+    if (!__DEV__) return;
+    // eslint-disable-next-line no-console
+    console.log('[debug-board]', JSON.stringify({ level: state.level, n: state.n, ratio: state.ratio, cells: state.cells, caps: state.caps }));
+  }, [boardId]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Per-attempt trackers consumed by onWon (flawless-clear detection, best-
   // clear-time) — a private pair per useGame INSTANCE, not a store shared
   // across the whole app. This matters: the ladder's useGame instance (see

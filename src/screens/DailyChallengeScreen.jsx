@@ -10,7 +10,7 @@ import { useGame } from '../state/useGame';
 import { useCountdown } from '../state/useCountdown';
 import { dailyDateStr } from '../state/useDailyStats';
 import { formatClock, formatTimeMs } from '../utils/format';
-import { isRewardedAvailable, showRewarded, maybeShowDailyBeatTimeInterstitial } from '../ads';
+import { isRewardedAvailable, showRewarded, maybeShowDailyBeatTimeInterstitial, maybeShowDailyTryAgainInterstitial } from '../ads';
 import { submitDailyTime } from '../leaderboards';
 import * as Engine from '../engine';
 
@@ -189,10 +189,11 @@ export default function DailyChallengeScreen({ difficulty, dailyStatsApi, statsA
   }, [started, tap]);
 
   const handleRetry = () => {
-    // Same cadence for both re-entrance paths — "Beat your time" (status
-    // 'won') and "Try again" after a loss — one shared counter, not two
-    // independent ones.
-    maybeShowDailyBeatTimeInterstitial();
+    // Separate cadences per re-entrance path — see their definitions in
+    // ../ads: "Beat your time" (status 'won') ads from the first retry;
+    // "Try again" after a loss waits until the 5th.
+    if (status === 'won') maybeShowDailyBeatTimeInterstitial();
+    else maybeShowDailyTryAgainInterstitial();
     setAdNotice(null);
     setReady(false);
     setStarted(false);

@@ -310,7 +310,29 @@ function rollCaps(n, capMin, capMax, rng = Math.random) {
 
 // Place a fully-packed board: every cell gets a non-green value, at most one at
 // its cap, and any full cell must be safe to tap.
-function placeFull(caps, n, ratio, rng = Math.random) {
+//
+// `bias` controls how much headroom an ORDINARY (non-full) cell starts with,
+// independent of capMin/capMax/ratio — at bias=1 (the default) a cell's value
+// is uniform across its whole legal span [minv, cap), same as always. At
+// bias>1 it's skewed toward the top of that span (closer to its own cap, less
+// margin before a neighbour's push tips it over) via Math.pow(rng(), bias),
+// which concentrates the sample near 0 as bias grows. Measured directly
+// (scripts/simulate-difficulty.js-style sweep): this is a real, independent
+// difficulty lever — e.g. at n=4/capMin=5/capMax=10, bias=2 roughly halves a
+// greedy bot's win rate vs bias=1 — but it has a sharp reliability cliff: safe
+// (near-0% generation-fallback) up to about bias=2.5 at capMax>=15, but by
+// bias=3 the single-full-cell/safety constraints start colliding often enough
+// that 20-30% of attempts fail outright. Keep any tuned bias comfortably
+// under that ceiling.
+//
+// bias===1 is special-cased to hit the EXACT original (minv + ...) expression
+// rather than the mathematically-equivalent-in-distribution (cap - 1 - ...)
+// form below, because newDailyGame feeds this a seeded deterministic RNG —
+// changing the formula would silently reshuffle which board a given
+// (date, difficulty) seed produces, breaking "same puzzle for everyone" for
+// every already-played date. Every existing caller that never passes bias
+// gets byte-identical output to before this parameter existed.
+function placeFull(caps, n, ratio, rng = Math.random, bias = 1) {
   const size = n * n, cells = new Array(size).fill(0);
   let full = 0;
   for (let i = 0; i < size; i++) {
@@ -327,8 +349,14 @@ function placeFull(caps, n, ratio, rng = Math.random) {
       cells[i] = cap; full++;
       continue;
     }
-    if (full < 1 && rng() < 0.1) { cells[i] = cap; full++; }
-    else cells[i] = minv + Math.floor(rng() * (cap - minv));   // strictly below cap
+    if (full < 1 && rng() < 0.1) { cells[i] = cap; full++; continue; }
+    if (bias === 1) {
+      cells[i] = minv + Math.floor(rng() * (cap - minv));   // strictly below cap
+    } else {
+      const span = cap - minv;
+      const skewed = Math.pow(rng(), bias); // bias>1 concentrates near 0
+      cells[i] = cap - 1 - Math.floor(skewed * span); // skewed toward cap-1
+    }
   }
   return cells;
 }
@@ -346,10 +374,10 @@ function fullCellsSafe(cells, caps, n, ratio) {
 // { cells, caps } or null if it couldn't within `attempts`. `rng` defaults to
 // Math.random; passing a seeded generator makes the whole board deterministic
 // (see newDailyGame below).
-function generateBoard({ n, ratio, capMin, capMax }, attempts = 120, rng = Math.random) {
+function generateBoard({ n, ratio, capMin, capMax, bias = 1 }, attempts = 120, rng = Math.random) {
   for (let a = 0; a < attempts; a++) {
     const caps = rollCaps(n, capMin, capMax, rng);
-    const cells = placeFull(caps, n, ratio, rng);
+    const cells = placeFull(caps, n, ratio, rng, bias);
     if (!cells.some(v => v > 0)) continue;
     // at most one full (at-cap) cell, and that cell must be safe to tap
     let fullCount = 0;
@@ -373,12 +401,17 @@ function generateBoard({ n, ratio, capMin, capMax }, attempts = 120, rng = Math.
 // earlier session's uncapped-grid-growth change had quietly overridden
 // without re-testing. So grid size can't be a smooth ramp past 4x4 — but
 // Leon wants the milestones on round numbers and 5x5 to be a real recurring
-// gauntlet (not just a rare late spike): 3x3 for L1-100, 4x4 for L101-500,
-// then a 5x5 spike every 5 levels from L505 on. This means roughly 1 in 5
-// levels past L500 is a near-unwinnable-for-bots wall — an intentional,
-// frequent brutal spike, not a continuation of the curve. Worth watching in
-// real playtesting given how much more often it now occurs than the old
-// "every 25 levels" design.
+// gauntlet (not just a rare late spike): 3x3 for L1-100, then a 5x5 spike
+// every 5 levels for the ENTIRE 4x4 game from L101 on (not just from L500) —
+// moved earlier at Leon's request, specifically because capMin/capMax/bias
+// tuning on a fixed 4x4 grid has a hard, measured reliability ceiling (see
+// the capMin-vs-capMax and bias notes below) and is inherently noisy at this
+// board size/trial scale, whereas grid size is the one lever measured to
+// have a huge, clean, unambiguous effect (greedy-bot win rate 75%->35%->0%
+// across 3x3->4x4->5x5). This means roughly 1 in 5 levels from L105 on is a
+// near-unwinnable-for-bots wall — an intentional, frequent brutal spike, not
+// a continuation of the curve. Worth watching in real playtesting given how
+// much more often it now occurs than the old "only after L500" design.
 //
 // TIER1_LEVELS raised from 50 to 100 after playtesting — Leon wants the
 // player to stay on the 3x3 grid longer while the numbers climb, rather than
@@ -387,8 +420,13 @@ const TIER1_GRID = 3;
 const TIER1_LEVELS = 100;   // 3x3 for L1-100 (round-number milestone)
 const TIER2_GRID = 4;
 const HARD_WALL_GRID = 5;
-const HARD_WALL_START_LEVEL = 500; // 4x4 for L101-500 (round-number milestone)
-const HARD_WALL_INTERVAL = 5;      // then a 5x5 spike every 5 levels — frequent, not rare
+const HARD_WALL_START_LEVEL = TIER1_LEVELS; // 5x5 spikes begin right after the 3x3 tutorial
+const HARD_WALL_INTERVAL = 5;      // a 5x5 spike every 5 levels — frequent, not rare
+// Where the 4x4-only capMax/bias ramp below finishes its climb — kept as its
+// own constant (the original L500 round-number milestone) rather than tied
+// to HARD_WALL_START_LEVEL, which moved; this ramp's pacing is unrelated to
+// when the 5x5 wall starts.
+const CAP_RAMP_END_LEVEL = 500;
 
 // Grid size for a given level: 3x3 early, 4x4 forever after, with a
 // scheduled 5x5 spike inserted periodically once deep in the late game.
@@ -523,6 +561,86 @@ function tier1Params(level) {
   return { capMin, capMax };
 }
 
+// 4x4-band-only (L101-500) capMax boost + fullness bias (see placeFull).
+// Scoped to ORDINARY 4x4 levels only — not the 3x3 tutorial (wasn't part of
+// what this was tuned to fix) and not the periodic 5x5 wall levels (already
+// ~0% win rate from grid size alone; bias is untested at n=5, so left at its
+// no-op default of 1 there rather than risking an unmeasured reliability
+// hit on top of an already-brutal spike).
+//
+// Measured problem: the whole-game capMin/capMax curve above pins capMin to
+// its floor almost immediately past level 100 (tier1 already got it there
+// by level 100, and the clamp two lines up never lets it rise back above
+// that) and only grows capMax from 9 to ~12 across the ENTIRE 101-500 band —
+// confirmed via scripts/simulate-difficulty.js that this band was flat-to-
+// EASIER as level rose (bot win rate climbing from ~6% to ~15%), the
+// opposite of real progression. Leon separately wants capMax to climb
+// faster through here regardless, so the player deals with visibly bigger
+// numbers sooner (not the old ~9->12 glacial pace) — but widening capMax
+// alone is measured to make boards EASIER (dilutes danger; see the
+// capMin-vs-capMax note above), which would make the flat-band problem
+// worse, not better.
+//
+// Fix: let capMax climb for real (10->22 over 101-500, boosted via Math.max
+// so it only ever rises, never regresses even past level 500 once the
+// whole-game curve's own much slower climb eventually overtakes this
+// plateau around level ~2000+), and ramp `bias` alongside it specifically to
+// cancel capMax's own easing effect rather than track level directly.
+// bias is front-loaded (sqrt, not linear) because a linear ramp measurably
+// left the MIDDLE of the band (roughly L200-350) easier than today's curve
+// before catching up by L500 — bias's tightening saturates fast (most of it
+// already shows by bias~1.5-2), so it needs to get there early to actually
+// outpace capMax's compounding climb, not arrive fashionably late.
+//
+// BIAS_CEILING is kept under the measured reliability cliff (dedicated
+// capMin=5 bias x capMax grid sweep: ~0% generation-fallback up to bias~2.5
+// at capMax>=15, climbing to 20-30% by bias=3) with real margin — and that
+// margin only grows as capMax keeps climbing beyond L500, since a wider
+// capMax was independently measured to make bias safer, not riskier.
+const CAP_MAX_BOOST_END_LEVEL = CAP_RAMP_END_LEVEL; // 500 — original round-number milestone, independent of where the 5x5 wall now starts
+const CAP_MAX_BOOST_START_VAL = 10; // capMax at level 101 (matches the unboosted curve there)
+// Trimmed from an initial 22 (paired with BIAS_CEILING=2.4) — that combo
+// measured a 10-35% fallback-trigger rate through levels ~300-550 (too
+// much of fallbackBoard's slower verified-retry path), and even after
+// trimming bias alone to a safe 2.0, 22 asked so much of bias just to
+// cancel its OWN easing (a wider capMax dilutes danger — see the
+// capMin-vs-capMax note above) that the net difficulty came back
+// essentially identical to the pre-boost curve — not an actual improvement.
+// 16 (with bias capped at 2.0) is the pair measured to land BOTH goals:
+// consistently tighter than the pre-boost curve at every checkpoint
+// (e.g. L400 11% vs the old curve's 14-20%; L500 12% vs 13-17%) and a
+// fallback-trigger rate that stays under 5% everywhere in the band.
+const CAP_MAX_BOOST_END_VAL = 16;
+const BIAS_CEILING = 2.0;
+
+function cap4x4BoostT(level) {
+  return Math.min(1, Math.max(0, (level - TIER1_LEVELS) / (CAP_MAX_BOOST_END_LEVEL - TIER1_LEVELS)));
+}
+function cap4x4Boost(level) {
+  return CAP_MAX_BOOST_START_VAL + (CAP_MAX_BOOST_END_VAL - CAP_MAX_BOOST_START_VAL) * cap4x4BoostT(level);
+}
+function biasFor4x4(level) {
+  return 1 + (BIAS_CEILING - 1) * Math.sqrt(cap4x4BoostT(level));
+}
+
+// Same "gradual climb over L101-500" treatment for the 5x5 wall levels, but
+// capMax ONLY — no bias here (still untested at n=5, and unnecessary: a
+// greedy bot is already ~0-6% at the wall's current fixed capMax=12
+// regardless of level, so there's no measurable win-rate headroom left for
+// bias to spend; the ramp below is for felt escalation/bigger numbers, not
+// bot win-rate, and measured to cost nothing extra in generation time either
+// — see the capMax x speed sweep this was tuned against: avg-ms stayed flat
+// (~160-176ms) across capMax 12-24 at n=5, because the wall's cost is
+// dominated by the one-time exact-solver pass on a 25-cell board, not by
+// rejected attempts the way capMax helps with at n=4. Shares cap4x4BoostT's
+// progress fraction (purely level-based, not grid-based) so both ramps
+// finish together at L500.
+const CAP_5X5_BOOST_START_VAL = CAP_MAX_SAFE_FLOOR_5X5; // 12 — today's fixed wall value
+const CAP_5X5_BOOST_END_VAL = 24;
+function cap5x5Boost(level) {
+  return CAP_5X5_BOOST_START_VAL + (CAP_5X5_BOOST_END_VAL - CAP_5X5_BOOST_START_VAL) * cap4x4BoostT(level);
+}
+
 // Difficulty params for a given level. Fully-packed at every level; grid
 // size per gridSizeForLevel (3x3 for L1-100, 4x4 for L101-500, then a 5x5
 // spike every 5 levels). Cap range for L1-100 follows the steep tier1 ramp
@@ -534,7 +652,7 @@ function tier1Params(level) {
 function levelParams(level) {
   const n = gridSizeForLevel(level);
   const ratio = 0.88;
-  let capMin, capMax;
+  let capMin, capMax, bias = 1;
   if (level <= TIER1_LEVELS) {
     ({ capMin, capMax } = tier1Params(level));
   } else {
@@ -557,11 +675,21 @@ function levelParams(level) {
     // range = easier" lever (see the capMin-vs-capMax note above), so its
     // own drop at this same seam doesn't compound the problem the same way.
     capMin = Math.min(capMin, tier1Params(TIER1_LEVELS).capMin);
+    // ORDINARY 4x4 levels only (not the periodic 5x5 wall) get the capMax
+    // boost + fullness bias described above — Math.max so this can only
+    // raise capMax, never regress it even once the whole-game curve's own
+    // climb eventually overtakes the boost's plateau.
+    if (n === TIER2_GRID) {
+      capMax = Math.max(capMax, Math.round(cap4x4Boost(level)));
+      bias = biasFor4x4(level);
+    } else if (n === HARD_WALL_GRID) {
+      capMax = Math.max(capMax, Math.round(cap5x5Boost(level)));
+    }
   }
   if (capMin <= CAP_MIN_FLOOR) {
     capMax = Math.max(capMax, n >= HARD_WALL_GRID ? CAP_MAX_SAFE_FLOOR_5X5 : CAP_MAX_SAFE_FLOOR_4X4);
   }
-  return { n, ratio, capMin, capMax };
+  return { n, ratio, capMin, capMax, bias };
 }
 
 /* ------------------------------------------------------------- lifecycle */
@@ -606,11 +734,33 @@ function retry(state) {
   };
 }
 
-// Last-resort board if generation fails (should be rare): a small safe board.
+// Last-resort path if generateBoard's normal attempt budget is exhausted
+// (should be rare). MUST still only ever return a solver-verified winnable
+// board — a player can never be hard-stuck, full stop — so this keeps
+// retrying the exact same verified generateBoard pipeline, just easing
+// capMax each round (the single safest lever for raw generation success;
+// see generateBoard's own comments) until one is actually found, rather
+// than ever handing back an unchecked roll. Returning early from
+// generateBoard's own 120 attempts already makes this exceedingly rare in
+// practice, so the extra rounds here essentially never run. bias is forced
+// back to 1 here regardless of what the level curve asked for — bias is a
+// difficulty lever that actively hurts generation reliability (see
+// placeFull), and this path's only job is finding ANY verified board, as
+// fast and as reliably as possible, not staying hard.
 function fallbackBoard(params, rng = Math.random) {
-  const caps = rollCaps(params.n, params.capMin, params.capMax, rng);
-  const cells = placeFull(caps, params.n, params.ratio, rng);
-  return { cells, caps };
+  let capMax = params.capMax;
+  for (let round = 0; round < 12; round++) {
+    const board = generateBoard({ ...params, capMax, bias: 1 }, 300, rng);
+    if (board) return board;
+    capMax = Math.max(capMax + 4, Math.ceil(capMax * 1.5));
+  }
+  // Unreachable in practice (12 rounds of widening capMax), but if every
+  // single one of those also exhausted its budget, fall back to a board
+  // that doesn't need the solver at all: every cell at a value <=4 is
+  // ALWAYS green (see isGreen) regardless of its cap, and an all-green
+  // board is an immediate, guaranteed win.
+  const size = params.n * params.n;
+  return { cells: new Array(size).fill(1), caps: new Array(size).fill(Math.max(params.capMin, 1)) };
 }
 
 /* --------------------------------------------------- daily challenge -----
